@@ -1,0 +1,35 @@
+
+📱 FIREBASE SHA-1 FINGERPRINT FOR ANDROID
+===============================================
+
+App: Bus Tracker (com.example.busappvictory)
+Project: bustracker-aca41
+
+✓ Debug SHA-1 Fingerprint:
+4C:1D:30:1B:B3:91:C7:56:0B:B0:75:2C:41:66:B0:62:7B:F5:8B:8B
+
+===============================================
+
+STEPS TO ADD TO FIREBASE CONSOLE:
+
+1. Go to: https://console.firebase.google.com/
+2. Select project: bustracker-aca41
+3. Settings (gear icon) → Project Settings
+4. Go to "Your apps" tab
+5. Click: Android app (com.example.busappvictory)
+6. Scroll down to: SHA certificate fingerprints
+7. Click: Add fingerprint
+8. Paste the SHA-1 above
+9. Click: Save
+10. Download updated google-services.json
+11. Replace: android/app/google-services.json
+12. Run: flutter clean && flutter pub get && flutter run
+
+===============================================
+
+If you've already added this SHA-1 and it still doesn't work:
+- Make sure google-services.json is updated
+- Google Sign-In is enabled in Firebase Console
+- Wait a few minutes for Firebase to sync changes
+
+===============================================

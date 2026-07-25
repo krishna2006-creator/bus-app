@@ -1,0 +1,601 @@
+"""
+WebSocket Endpoints for Real-Time Bus Tracking
+Handles location sharing with bus-based room grouping
+"""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status, Query, HTTPException
+from sqlalchemy.orm import Session
+import json
+import asyncio
+import logging
+from datetime import datetime
+
+from ..database.database import SessionLocal, get_db
+from ..database import models
+from ..services.websocket_manager_v2 import manager, LocationData
+from ..services.location_analyzer import location_analyzer
+from ..services.prediction_service import prediction_service
+from ..utils.auth_utils import get_current_user
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api", tags=["WebSocket"])
+
+
+# ============================================================================
+# LOCATION SHARING (Main Real-Time Location Endpoint)
+# ============================================================================
+
+
+@router.websocket("/ws/location/{bus_id}")
+async def websocket_location_tracking(
+    websocket: WebSocket,
+    bus_id: int,
+    token: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    WebSocket endpoint for real-time location sharing for a specific bus.
+
+    FLOW:
+    1. Client connects to /ws/location/{bus_id}?token=JWT_TOKEN
+    2. Server authenticates user via JWT
+    3. User joins the bus room (group)
+    4. Server sends last known location if available
+    5. User can send location updates (one sender per bus, driver preferred)
+    6. All users in same bus receive location updates in real-time
+    7. On disconnect, user is removed from bus room
+    """
+    user = None
+    user_id = None
+    user_name = None
+    user_role = None
+
+    try:
+        await websocket.accept()
+
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+
+        if not token:
+            token = websocket.query_params.get("token")
+
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header and auth_header.lower().startswith("bearer ") and not token:
+            token = auth_header[7:]
+
+        user = get_current_user(token, db)
+        if not user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+            return
+
+        user_id = user.id
+        user_name = user.full_name or f"User {user_id}"
+        user_role = user.role or "student"
+
+        # Connect user to the bus room
+        success = await manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            user_name=user_name,
+            user_role=user_role,
+            bus_id=bus_id,
+        )
+
+        if not success:
+            await websocket.close(code=status.WS_1011_SERVER_ERROR, reason="Failed to connect")
+            return
+
+        logger.info(f"User {user_id} ({user_name}) connected to bus {bus_id}")
+
+        # Send last known location if available
+        await manager.send_last_location_to_user(bus_id, user_id)
+
+        # Send bus info (active users)
+        bus_info = manager.get_bus_info(bus_id)
+        if bus_info:
+            await manager.send_personal_message(
+                user_id,
+                {
+                    "type": "BUS_INFO",
+                    "bus_id": bus_id,
+                    "user_count": bus_info["user_count"],
+                    "active_users": bus_info["active_users"],
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+
+        # Notify other users in the bus about new user
+        await manager.broadcast_to_bus(
+            bus_id,
+            {
+                "type": "USER_JOINED",
+                "bus_id": bus_id,
+                "user_id": user_id,
+                "user_name": user_name,
+                "user_role": user_role,
+                "timestamp": datetime.now().isoformat(),
+            },
+            exclude_user_id=str(user_id),
+        )
+
+        # Main WebSocket loop - receive and process messages
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+
+            message_type = message.get("type", "").upper()
+
+            if message_type == "LOCATION_UPDATE":
+                # Process location update through the analyzer
+                result = await location_analyzer.process_location_update(db, user, message)
+
+                if result.get("status") == "ignored":
+                    await manager.send_personal_message(
+                        user_id,
+                        {
+                            "type": "ERROR",
+                            "error": result.get("reason", "Location update ignored"),
+                            "bus_id": bus_id,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+                    logger.warning(
+                        f"Location update ignored for user {user_id}: {result.get('reason')}"
+                    )
+
+            elif message_type in ("STOP_SHARING", "LOCATION_CLEARED"):
+                # Process stop sharing through the analyzer, which will broadcast
+                # LOCATION_CLEARED to all other users in the bus room
+                result = await location_analyzer.process_location_update(db, user, message)
+                logger.info(
+                    f"Stop sharing processed for user {user_id} on bus {bus_id}: {result.get('status')}"
+                )
+
+            elif message_type == "PING":
+                await manager.send_personal_message(
+                    user_id,
+                    {
+                        "type": "PONG",
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                )
+
+            elif message_type == "GET_BUS_INFO":
+                bus_info = manager.get_bus_info(bus_id)
+                if bus_info:
+                    await manager.send_personal_message(
+                        user_id,
+                        {
+                            "type": "BUS_INFO",
+                            "bus_id": bus_id,
+                            "user_count": bus_info["user_count"],
+                            "active_users": bus_info["active_users"],
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+            else:
+                logger.warning(f"Unknown message type: {message_type}")
+
+    except HTTPException as exc:
+        logger.warning(f"WebSocket auth failed for bus {bus_id}: {exc.detail}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc.detail or "Unauthorized"))
+        return
+
+    except WebSocketDisconnect:
+        logger.info(f"User {user_id} disconnected from bus {bus_id}")
+
+        if user_id:
+            await location_analyzer.remove_location(user_id, bus_id, user_role)
+
+            await manager.broadcast_to_bus(
+                bus_id,
+                {
+                    "type": "USER_LEFT",
+                    "bus_id": bus_id,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON from user {user_id}: {e}")
+        if user_id:
+            await manager.send_personal_message(
+                user_id,
+                {
+                    "type": "ERROR",
+                    "error": "Invalid JSON format",
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user_id} on bus {bus_id}: {e}")
+        if user_id:
+            await location_analyzer.remove_location(user_id, bus_id, user_role)
+            await manager.send_personal_message(
+                user_id,
+                {
+                    "type": "ERROR",
+                    "error": "Invalid JSON format",
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+
+    finally:
+        db.close()
+
+
+# ============================================================================
+# STOP PREDICTION LIVE WEBSOCKET (Real-time bus ETA & phase tracking)
+# ============================================================================
+
+
+@router.websocket("/ws/stop-prediction-live")
+async def websocket_stop_prediction_live(
+    websocket: WebSocket,
+    token: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    WebSocket endpoint for live stop predictions with auto phase-switching.
+    
+    FLOW:
+    1. Student selects a boarding stop and has a pinned bus
+    2. This WS sends periodic PREDICTION_UPDATE messages with ETA, distance, status
+    3. When bus passes the stop (distance < 250m), phase auto-switches to "Heading to College"
+    4. When phase switches, a NOTIFICATION message is sent
+    5. The map automatically updates to show tracking to college
+    """
+    user = None
+    user_id = None
+    last_phase = 0
+
+    try:
+        await websocket.accept()
+
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+        if not token:
+            token = websocket.query_params.get("token")
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header and auth_header.lower().startswith("bearer ") and not token:
+            token = auth_header[7:]
+
+        user = get_current_user(token, db)
+        if not user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+            return
+
+        user_id = str(user.id)
+        user_name = user.full_name or f"User {user_id}"
+        user_role = user.role or "student"
+
+        success = await manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            user_name=user_name,
+            user_role=user_role,
+            bus_id=0,
+        )
+        if not success:
+            await websocket.close(code=status.WS_1011_SERVER_ERROR, reason="Failed to connect")
+            return
+
+        logger.info(f"Stop prediction WS connected for user {user_id} ({user_name})")
+
+        await websocket.send_json({
+            "type": "CONNECTED",
+            "message": "Stop prediction live updates connected",
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+        async def send_prediction_updates():
+            nonlocal last_phase
+            while True:
+                try:
+                    pred = await prediction_service.get_live_prediction(db, user_id)
+                    
+                    if pred and "error" not in pred:
+                        current_phase = prediction_service.user_phases.get(user_id, 0)
+                        
+                        if current_phase != last_phase:
+                            last_phase = current_phase
+                            if current_phase == 1:
+                                await websocket.send_json({
+                                    "type": "NOTIFICATION",
+                                    "title": "Bus Left Your Stop!",
+                                    "message": "Your bus has passed your boarding point and is now heading to Agni College of Technology",
+                                    "notification_type": "left_stop",
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                            else:
+                                await websocket.send_json({
+                                    "type": "NOTIFICATION",
+                                    "title": "Bus Approaching Your Stop",
+                                    "message": f"Bus is {pred.get('duration_mins', 0)} min away from your stop",
+                                    "notification_type": "bus_arriving",
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                        
+                        await websocket.send_json({
+                            "type": "PREDICTION_UPDATE",
+                            "payload": {
+                                "bus_id": pred["bus_id"],
+                                "distance_km": round(pred["distance_km"], 2),
+                                "eta_minutes": pred["duration_mins"],
+                                "status": pred["status"],
+                                "target": pred["target"],
+                                "is_to_college": pred["target"] == "Agni College of Technology",
+                            },
+                            "timestamp": datetime.now().isoformat(),
+                        })
+                        
+                        if current_phase == 1 and pred.get("distance_km", 0) < 2.0:
+                            await websocket.send_json({
+                                "type": "NOTIFICATION",
+                                "title": "Approaching College!",
+                                "message": f"Bus is {pred.get('duration_mins', 0)} min away from Agni College of Technology",
+                                "notification_type": "approaching_college",
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                    
+                    await asyncio.sleep(3)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Prediction update error for user {user_id}: {e}")
+                    await asyncio.sleep(5)
+
+        update_task = asyncio.create_task(send_prediction_updates())
+
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+            msg_type = message.get("type", "").upper()
+
+            if msg_type == "PING":
+                await websocket.send_json({
+                    "type": "PONG",
+                    "timestamp": datetime.now().isoformat(),
+                })
+            elif msg_type == "GET_PREDICTION":
+                pred = await prediction_service.get_live_prediction(db, user_id)
+                if pred and "error" not in pred:
+                    await websocket.send_json({
+                        "type": "PREDICTION_UPDATE",
+                        "payload": {
+                            "bus_id": pred["bus_id"],
+                            "distance_km": round(pred["distance_km"], 2),
+                            "eta_minutes": pred["duration_mins"],
+                            "status": pred["status"],
+                            "target": pred["target"],
+                            "is_to_college": pred["target"] == "Agni College of Technology",
+                        },
+                        "timestamp": datetime.now().isoformat(),
+                    })
+            else:
+                logger.warning(f"Unknown message type: {msg_type}")
+
+    except WebSocketDisconnect:
+        logger.info(f"Stop prediction WS disconnected for user {user_id}")
+        if user_id:
+            manager.disconnect(user_id, bus_id=0)
+            if user_id in prediction_service.user_phases:
+                del prediction_service.user_phases[user_id]
+
+    except Exception as e:
+        logger.error(f"Stop prediction WS error for user {user_id}: {e}")
+        if 'update_task' in dir():
+            update_task.cancel()
+        if user_id:
+            manager.disconnect(user_id, bus_id=0)
+
+    finally:
+        db.close()
+
+
+# ============================================================================
+# NOTIFICATION WEBSOCKET (General purpose for notifications)
+# ============================================================================
+
+
+@router.websocket("/ws")
+async def websocket_notifications(
+    websocket: WebSocket,
+    token: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    General WebSocket endpoint for notifications and multi-bus tracking.
+    Handles:
+    - NOTIFICATION messages
+    - LOCATION_UPDATE with bus_id in payload
+    - PING/PONG keepalive
+    """
+    user = None
+    user_id = None
+    try:
+        await websocket.accept()
+        
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+        
+        if not token:
+            token = websocket.query_params.get("token")
+        
+        user = get_current_user(token, db)
+        if not user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+            return
+        
+        user_id = user.id
+        user_name = user.full_name or f"User {user_id}"
+        user_role = user.role or "student"
+        
+        logger.info(f"Notification WebSocket connected for user {user_id} ({user_name})")
+        
+        # Connect to manager for notifications
+        success = await manager.connect(
+            websocket=websocket,
+            user_id=user_id,
+            user_name=user_name,
+            user_role=user_role,
+            bus_id=0,  # Use bus_id=0 for notification-only connections
+        )
+        
+        if not success:
+            await websocket.close(code=status.WS_1011_SERVER_ERROR, reason="Failed to connect")
+            return
+        
+        # Send welcome message
+        await websocket.send_json({
+            "type": "CONNECTED",
+            "message": "Notification WebSocket connected",
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat(),
+        })
+        
+        # Keep connection alive and handle messages
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                msg_type = message.get("type", "").upper()
+                
+                if msg_type == "PING":
+                    await websocket.send_json({
+                        "type": "PONG",
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                elif msg_type == "LOCATION_UPDATE":
+                    # Handle location updates on general WS
+                    bus_id = message.get("bus_id") or message.get("busId")
+                    if bus_id:
+                        result = await location_analyzer.process_location_update(db, user, message)
+                        if result.get("status") == "ignored":
+                            await websocket.send_json({
+                                "type": "ERROR",
+                                "error": result.get("reason", "Location update ignored"),
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                else:
+                    await websocket.send_json({
+                        "type": "ERROR",
+                        "error": "Unknown message type. Use PING to keep alive.",
+                        "timestamp": datetime.now().isoformat(),
+                    })
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "ERROR",
+                    "error": "Invalid JSON",
+                    "timestamp": datetime.now().isoformat(),
+                })
+    
+    except WebSocketDisconnect:
+        logger.info(f"Notification WebSocket disconnected for user {user_id}")
+        if user_id:
+            await manager.disconnect(user_id, bus_id=0)
+    
+    except Exception as e:
+        logger.error(f"Notification WebSocket error for user {user_id}: {e}")
+        if user_id:
+            await manager.disconnect(user_id, bus_id=0)
+    
+    finally:
+        db.close()
+
+
+# ============================================================================
+# REST ENDPOINT FOR LOCATION UPDATES (Alternative/Fallback)
+# ============================================================================
+
+
+@router.post("/ws/location/update")
+async def post_location_update(
+    bus_id: int = Query(...),
+    token: str = Query(None),
+    location_data: dict = None,
+    db: Session = Depends(get_db),
+):
+    """
+    REST endpoint for location updates (alternative to WebSocket).
+    """
+    user = get_current_user(token, db)
+    if not user:
+        return {"success": False, "error": "Unauthorized"}
+
+    user_id = user.id
+    user_name = user.full_name or f"User {user_id}"
+    user_role = user.role or "student"
+
+    try:
+        location = LocationData(
+            latitude=location_data.get("latitude", 0.0),
+            longitude=location_data.get("longitude", 0.0),
+            speed=location_data.get("speed", 0.0),
+            direction=location_data.get("direction", 0.0),
+            accuracy=location_data.get("accuracy", 0.0),
+            timestamp=location_data.get("timestamp", datetime.now().timestamp()),
+            user_id=user_id,
+            user_name=user_name,
+            user_role=user_role,
+        )
+
+        result = await manager.handle_location_update(bus_id, user_id, location)
+
+        if result["success"]:
+            return {
+                "success": True,
+                "bus_id": bus_id,
+                "user_id": user_id,
+                "broadcast_to_count": result.get("broadcast_to_count", 0),
+                "message": f"Location broadcast to {result.get('broadcast_to_count')} users",
+            }
+        else:
+            return {"success": False, "error": result.get("error", "Unknown error")}
+
+    except Exception as e:
+        logger.error(f"Error handling location update: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# MANAGEMENT ENDPOINTS
+# ============================================================================
+
+
+@router.get("/ws/stats")
+async def get_websocket_stats():
+    """Get WebSocket manager statistics."""
+    return manager.get_stats()
+
+
+@router.get("/ws/bus/{bus_id}/info")
+async def get_bus_info(bus_id: int):
+    """Get information about a specific bus room"""
+    bus_info = manager.get_bus_info(bus_id)
+    if not bus_info:
+        return {"success": False, "error": f"Bus {bus_id} not found"}
+
+    return {
+        "success": True,
+        "bus_id": bus_id,
+        "data": bus_info,
+    }
+
+
+@router.get("/ws/user/{user_id}/buses")
+async def get_user_buses(user_id: int):
+    """Get all buses a user is currently connected to"""
+    buses = manager.get_user_buses(user_id)
+    return {"success": True, "user_id": user_id, "buses": buses}

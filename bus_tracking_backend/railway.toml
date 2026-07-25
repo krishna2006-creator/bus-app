@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "sh -c 'cd bus_tracking_backend && uvicorn main:app --host 0.0.0.0 --port $PORT'"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+
+[[deploy.volumes]]
+mountPath = "/app/uploads"
+name = "uploads"
