@@ -20,15 +20,15 @@ logger.info(f"Database URL: {SQLALCHEMY_DATABASE_URL}")
 def _create_engine(url: str):
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False})
-    # PostgreSQL with connection pooling
+    # PostgreSQL with connection pooling - increased pool size for WebSocket connections
     return create_engine(
         url,
         poolclass=QueuePool,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=20,        # Increased from 5 to 20
+        max_overflow=30,     # Increased from 10 to 30
         pool_pre_ping=True,
-        pool_recycle=1800,
-        pool_timeout=30,
+        pool_recycle=300,    # Recycle connections after 5 min instead of 30
+        pool_timeout=60,     # Increased timeout from 30 to 60 sec
     )
 
 try:

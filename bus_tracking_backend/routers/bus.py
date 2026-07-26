@@ -22,7 +22,8 @@ router = APIRouter(
 
 # --- Public/Student Access Endpoints ---
 
-@router.get("/", response_model=List[bus_schemas.BusResponse])
+@router.get("", include_in_schema=False)
+@router.get("/", include_in_schema=False)
 def read_buses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return crud.get_buses(db, skip=skip, limit=limit)
 

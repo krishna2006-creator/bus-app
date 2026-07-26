@@ -15,11 +15,27 @@ from ..database import models
 from ..services.websocket_manager_v2 import manager, LocationData
 from ..services.location_analyzer import location_analyzer
 from ..services.prediction_service import prediction_service
+from ..services.notification_service import notification_service
 from ..utils.auth_utils import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["WebSocket"])
+
+
+async def _verify_token(token: str):
+    """Verify a WebSocket token and return user info without holding a DB session."""
+    if not token:
+        return None
+    try:
+        db = SessionLocal()
+        try:
+            user = get_current_user(token, db)
+            return user
+        finally:
+            db.close()
+    except Exception:
+        return None
 
 
 # ============================================================================
@@ -32,20 +48,9 @@ async def websocket_location_tracking(
     websocket: WebSocket,
     bus_id: int,
     token: str = Query(None),
-    db: Session = Depends(get_db),
 ):
-    """Primary WebSocket endpoint for bus location tracking."""
     """
-    WebSocket endpoint for real-time location sharing for a specific bus.
-
-    FLOW:
-    1. Client connects to /ws/location/{bus_id}?token=JWT_TOKEN
-    2. Server authenticates user via JWT
-    3. User joins the bus room (group)
-    4. Server sends last known location if available
-    5. User can send location updates (one sender per bus, driver preferred)
-    6. All users in same bus receive location updates in real-time
-    7. On disconnect, user is removed from bus room
+    Primary WebSocket endpoint for bus location tracking.
     """
     user = None
     user_id = None
@@ -57,18 +62,12 @@ async def websocket_location_tracking(
 
         if token and token.startswith("Bearer "):
             token = token[7:]
-
         if not token:
             token = websocket.query_params.get("token")
-
         if token and token.startswith("Bearer "):
             token = token[7:]
 
-        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-        if auth_header and auth_header.lower().startswith("bearer ") and not token:
-            token = auth_header[7:]
-
-        user = get_current_user(token, db)
+        user = await _verify_token(token)
         if not user:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
             return
@@ -77,7 +76,7 @@ async def websocket_location_tracking(
         user_name = user.full_name or f"User {user_id}"
         user_role = user.role or "student"
 
-        # Connect user to the bus room
+        # Connect user to the bus room (after accept)
         success = await manager.connect(
             websocket=websocket,
             user_id=user_id,
@@ -85,7 +84,6 @@ async def websocket_location_tracking(
             user_role=user_role,
             bus_id=bus_id,
         )
-
         if not success:
             await websocket.close(code=status.WS_1011_SERVER_ERROR, reason="Failed to connect")
             return
@@ -94,20 +92,6 @@ async def websocket_location_tracking(
 
         # Send last known location if available
         await manager.send_last_location_to_user(bus_id, user_id)
-
-        # Send bus info (active users)
-        bus_info = manager.get_bus_info(bus_id)
-        if bus_info:
-            await manager.send_personal_message(
-                user_id,
-                {
-                    "type": "BUS_INFO",
-                    "bus_id": bus_id,
-                    "user_count": bus_info["user_count"],
-                    "active_users": bus_info["active_users"],
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
 
         # Notify other users in the bus about new user
         await manager.broadcast_to_bus(
@@ -127,12 +111,19 @@ async def websocket_location_tracking(
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
-
             message_type = message.get("type", "").upper()
 
             if message_type == "LOCATION_UPDATE":
-                # Process location update through the analyzer
-                result = await location_analyzer.process_location_update(db, user, message)
+                # Create a short-lived db session for processing
+                try:
+                    db = SessionLocal()
+                    try:
+                        result = await location_analyzer.process_location_update(db, user, message)
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"Location update error: {e}")
+                    result = {}
 
                 if result.get("status") == "ignored":
                     await manager.send_personal_message(
@@ -144,25 +135,20 @@ async def websocket_location_tracking(
                             "timestamp": datetime.now().isoformat(),
                         },
                     )
-                    logger.warning(
-                        f"Location update ignored for user {user_id}: {result.get('reason')}"
-                    )
 
             elif message_type in ("STOP_SHARING", "LOCATION_CLEARED"):
-                # Process stop sharing through the analyzer, which will broadcast
-                # LOCATION_CLEARED to all other users in the bus room
-                result = await location_analyzer.process_location_update(db, user, message)
-                logger.info(
-                    f"Stop sharing processed for user {user_id} on bus {bus_id}: {result.get('status')}"
-                )
+                try:
+                    db = SessionLocal()
+                    try:
+                        result = await location_analyzer.process_location_update(db, user, message)
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"Stop sharing error: {e}")
 
             elif message_type == "PING":
                 await manager.send_personal_message(
-                    user_id,
-                    {
-                        "type": "PONG",
-                        "timestamp": datetime.now().isoformat(),
-                    },
+                    user_id, {"type": "PONG", "timestamp": datetime.now().isoformat()},
                 )
 
             elif message_type == "GET_BUS_INFO":
@@ -179,20 +165,25 @@ async def websocket_location_tracking(
                         },
                     )
 
-            else:
-                logger.warning(f"Unknown message type: {message_type}")
-
     except HTTPException as exc:
         logger.warning(f"WebSocket auth failed for bus {bus_id}: {exc.detail}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc.detail or "Unauthorized"))
+        try:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc.detail or "Unauthorized"))
+        except Exception:
+            pass
         return
 
     except WebSocketDisconnect:
         logger.info(f"User {user_id} disconnected from bus {bus_id}")
-
         if user_id:
-            await location_analyzer.remove_location(user_id, bus_id, user_role)
-
+            try:
+                db = SessionLocal()
+                try:
+                    await location_analyzer.remove_location(user_id, bus_id, user_role)
+                finally:
+                    db.close()
+            except Exception:
+                pass
             await manager.broadcast_to_bus(
                 bus_id,
                 {
@@ -206,31 +197,18 @@ async def websocket_location_tracking(
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON from user {user_id}: {e}")
-        if user_id:
-            await manager.send_personal_message(
-                user_id,
-                {
-                    "type": "ERROR",
-                    "error": "Invalid JSON format",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
 
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id} on bus {bus_id}: {e}")
         if user_id:
-            await location_analyzer.remove_location(user_id, bus_id, user_role)
-            await manager.send_personal_message(
-                user_id,
-                {
-                    "type": "ERROR",
-                    "error": "Invalid JSON format",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
-
-    finally:
-        db.close()
+            try:
+                db = SessionLocal()
+                try:
+                    await location_analyzer.remove_location(user_id, bus_id, user_role)
+                finally:
+                    db.close()
+            except Exception:
+                pass
 
 
 # ============================================================================
@@ -242,18 +220,7 @@ async def websocket_location_tracking(
 async def websocket_stop_prediction_live(
     websocket: WebSocket,
     token: str = Query(None),
-    db: Session = Depends(get_db),
 ):
-    """
-    WebSocket endpoint for live stop predictions with auto phase-switching.
-    
-    FLOW:
-    1. Student selects a boarding stop and has a pinned bus
-    2. This WS sends periodic PREDICTION_UPDATE messages with ETA, distance, status
-    3. When bus passes the stop (distance < 250m), phase auto-switches to "Heading to College"
-    4. When phase switches, a NOTIFICATION message is sent
-    5. The map automatically updates to show tracking to college
-    """
     user = None
     user_id = None
     last_phase = 0
@@ -268,11 +235,8 @@ async def websocket_stop_prediction_live(
             token = websocket.query_params.get("token")
         if token and token.startswith("Bearer "):
             token = token[7:]
-        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-        if auth_header and auth_header.lower().startswith("bearer ") and not token:
-            token = auth_header[7:]
 
-        user = get_current_user(token, db)
+        user = await _verify_token(token)
         if not user:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
             return
@@ -305,11 +269,15 @@ async def websocket_stop_prediction_live(
             nonlocal last_phase
             while True:
                 try:
-                    pred = await prediction_service.get_live_prediction(db, user_id)
-                    
+                    db = SessionLocal()
+                    try:
+                        pred = await prediction_service.get_live_prediction(db, user_id)
+                    finally:
+                        db.close()
+
                     if pred and "error" not in pred:
                         current_phase = prediction_service.user_phases.get(user_id, 0)
-                        
+
                         if current_phase != last_phase:
                             last_phase = current_phase
                             if current_phase == 1:
@@ -328,7 +296,7 @@ async def websocket_stop_prediction_live(
                                     "notification_type": "bus_arriving",
                                     "timestamp": datetime.now().isoformat(),
                                 })
-                        
+
                         await websocket.send_json({
                             "type": "PREDICTION_UPDATE",
                             "payload": {
@@ -341,7 +309,7 @@ async def websocket_stop_prediction_live(
                             },
                             "timestamp": datetime.now().isoformat(),
                         })
-                        
+
                         if current_phase == 1 and pred.get("distance_km", 0) < 2.0:
                             await websocket.send_json({
                                 "type": "NOTIFICATION",
@@ -350,7 +318,7 @@ async def websocket_stop_prediction_live(
                                 "notification_type": "approaching_college",
                                 "timestamp": datetime.now().isoformat(),
                             })
-                    
+
                     await asyncio.sleep(3)
                 except asyncio.CancelledError:
                     break
@@ -371,7 +339,11 @@ async def websocket_stop_prediction_live(
                     "timestamp": datetime.now().isoformat(),
                 })
             elif msg_type == "GET_PREDICTION":
-                pred = await prediction_service.get_live_prediction(db, user_id)
+                db = SessionLocal()
+                try:
+                    pred = await prediction_service.get_live_prediction(db, user_id)
+                finally:
+                    db.close()
                 if pred and "error" not in pred:
                     await websocket.send_json({
                         "type": "PREDICTION_UPDATE",
@@ -385,8 +357,6 @@ async def websocket_stop_prediction_live(
                         },
                         "timestamp": datetime.now().isoformat(),
                     })
-            else:
-                logger.warning(f"Unknown message type: {msg_type}")
 
     except WebSocketDisconnect:
         logger.info(f"Stop prediction WS disconnected for user {user_id}")
@@ -402,9 +372,6 @@ async def websocket_stop_prediction_live(
         if user_id:
             manager.disconnect(user_id, bus_id=0)
 
-    finally:
-        db.close()
-
 
 # ============================================================================
 # NOTIFICATION WEBSOCKET (General purpose for notifications)
@@ -415,50 +382,40 @@ async def websocket_stop_prediction_live(
 async def websocket_notifications(
     websocket: WebSocket,
     token: str = Query(None),
-    db: Session = Depends(get_db),
 ):
-    """
-    General WebSocket endpoint for notifications and multi-bus tracking.
-    Handles:
-    - NOTIFICATION messages
-    - LOCATION_UPDATE with bus_id in payload
-    - PING/PONG keepalive
-    """
     user = None
     user_id = None
     try:
         await websocket.accept()
-        
+
         if token and token.startswith("Bearer "):
             token = token[7:]
-        
         if not token:
             token = websocket.query_params.get("token")
-        
-        user = get_current_user(token, db)
+
+        user = await _verify_token(token)
         if not user:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
             return
-        
+
         user_id = user.id
         user_name = user.full_name or f"User {user_id}"
         user_role = user.role or "student"
-        
+
         logger.info(f"Notification WebSocket connected for user {user_id} ({user_name})")
-        
+
         # Connect to manager for notifications
         success = await manager.connect(
             websocket=websocket,
             user_id=user_id,
             user_name=user_name,
             user_role=user_role,
-            bus_id=0,  # Use bus_id=0 for notification-only connections
+            bus_id=0,
         )
-        
         if not success:
             await websocket.close(code=status.WS_1011_SERVER_ERROR, reason="Failed to connect")
             return
-        
+
         # Send welcome message
         await websocket.send_json({
             "type": "CONNECTED",
@@ -466,24 +423,27 @@ async def websocket_notifications(
             "user_id": user_id,
             "timestamp": datetime.now().isoformat(),
         })
-        
+
         # Keep connection alive and handle messages
         while True:
             try:
                 data = await websocket.receive_text()
                 message = json.loads(data)
                 msg_type = message.get("type", "").upper()
-                
+
                 if msg_type == "PING":
                     await websocket.send_json({
                         "type": "PONG",
                         "timestamp": datetime.now().isoformat(),
                     })
                 elif msg_type == "LOCATION_UPDATE":
-                    # Handle location updates on general WS
                     bus_id = message.get("bus_id") or message.get("busId")
                     if bus_id:
-                        result = await location_analyzer.process_location_update(db, user, message)
+                        db = SessionLocal()
+                        try:
+                            result = await location_analyzer.process_location_update(db, user, message)
+                        finally:
+                            db.close()
                         if result.get("status") == "ignored":
                             await websocket.send_json({
                                 "type": "ERROR",
@@ -502,7 +462,7 @@ async def websocket_notifications(
                     "error": "Invalid JSON",
                     "timestamp": datetime.now().isoformat(),
                 })
-    
+
     except WebSocketDisconnect:
         logger.info(f"Notification WebSocket disconnected for user {user_id}")
         if user_id:
@@ -512,9 +472,6 @@ async def websocket_notifications(
         logger.error(f"Notification WebSocket error for user {user_id}: {e}")
         if user_id:
             manager.disconnect(user_id, bus_id=0)
-    
-    finally:
-        db.close()
 
 
 # ============================================================================
@@ -529,9 +486,6 @@ async def post_location_update(
     location_data: dict = None,
     db: Session = Depends(get_db),
 ):
-    """
-    REST endpoint for location updates (alternative to WebSocket).
-    """
     user = get_current_user(token, db)
     if not user:
         return {"success": False, "error": "Unauthorized"}
@@ -591,7 +545,7 @@ async def get_bus_info(bus_id: int):
 
     return {
         "success": True,
-        "bus_id": bus_id,  
+        "bus_id": bus_id,
         "data": bus_info,
     }
 
