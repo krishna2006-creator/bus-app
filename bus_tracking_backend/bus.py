@@ -79,13 +79,14 @@ async def start_bus_tracking(
     if current_user.role != models.UserRole.DRIVER or current_user.assigned_bus_id != bus_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to start tracking this bus")
     
-    # Send notification that bus has started
+    # Send notification that bus has started (exclude the driver who started it)
     await notification_service.broadcast_to_role(
         db,
         title="Bus Service Started",
         message=f"Bus {bus_id} has started sharing its live location.",
         category="BUS_STARTED",
-        target_role="all"
+        target_role="all",
+        exclude_user_id=current_user.id
     )
     return {"message": f"Bus {bus_id} tracking started and notifications sent."}
 

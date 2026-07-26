@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:agni_college_bus_tracker/models/trip.dart';
 import 'package:agni_college_bus_tracker/services/api_service.dart';
@@ -11,6 +10,8 @@ class TripService extends ChangeNotifier {
   int _activeTripCount = 0;
 
   List<Trip> get trips => _trips;
+  List<Trip> get activeTrips =>
+      _trips.where((t) => t.status == TripStatus.active).toList();
   int get activeTripCount => _activeTripCount;
   Trip? get activeTrip {
     try {
@@ -73,6 +74,12 @@ class TripService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error fetching active trips from backend: $e');
     }
+  }
+
+  // Refresh active trips count from backend
+  Future<void> refreshActiveTrips() async {
+    await _fetchFromBackend();
+    notifyListeners();
   }
 
   Future<void> startTrip(Trip trip) async {

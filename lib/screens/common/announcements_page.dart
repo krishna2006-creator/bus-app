@@ -177,6 +177,14 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
         ),
         title: Text(widget.title),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              await context.read<AnnouncementService>().initialize();
+              setState(() {});
+            },
+            tooltip: 'Refresh announcements',
+          ),
           if (widget.allowCreate)
             IconButton(
               icon: const Icon(Icons.add, color: AppColors.info),
@@ -252,8 +260,7 @@ class _AnnouncementsPageState extends State<AnnouncementsPage> {
                                           Navigator.pop(ctx, false),
                                       child: const Text('Cancel')),
                                   TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, true),
+                                      onPressed: () => Navigator.pop(ctx, true),
                                       child: const Text('Delete')),
                                 ],
                               ),

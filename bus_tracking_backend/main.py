@@ -21,7 +21,7 @@ from bus_tracking_backend.services.prediction_service import prediction_service
 from bus_tracking_backend.services.location_analyzer import location_analyzer
 from bus_tracking_backend.utils.auth_utils import get_current_user
 from bus_tracking_backend.config import settings
-from bus_tracking_backend.routers import bus, students, announcements, requests, documents, drivers, stops, tracking, device_tokens, websocket_routes
+from bus_tracking_backend.routers import bus, students, announcements, requests, documents, drivers, stops, tracking, device_tokens, feedback, websocket_routes
 from bus_tracking_backend.services import auth as auth_service
 
 Base.metadata.create_all(bind=engine)
@@ -78,71 +78,6 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 api_router = APIRouter(prefix="/api")
 
-@api_router.websocket("/ws")
-async def general_websocket(websocket: WebSocket, token: str = None):
-    await websocket.accept()
-    db = SessionLocal()
-    user_id = None
-    user_role = "student"
-    bus_id = 0
-    try:
-        if token and token.startswith("Bearer "):
-            token = token[7:]
-        if not token:
-            token = websocket.query_params.get("token")
-        if token and token.startswith("Bearer "):
-            token = token[7:]
-        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
-        if auth_header and auth_header.lower().startswith("bearer ") and not token:
-            token = auth_header[7:]
-
-        user = get_current_user(token, db) if token else None
-        if not user or not token:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        user_id = user.id
-        user_role = str(user.role)
-        bus_id = getattr(user, 'assigned_bus_id', 0) or 0
-
-        await websocket_manager.connect(
-            websocket, user_id,
-            getattr(user, 'full_name', str(user.id)),
-            str(user.role),
-            getattr(user, 'assigned_bus_id', 0) or 0
-        )
-        await websocket.send_text(json.dumps({"type": "CONNECTION_ESTABLISHED", "user": getattr(user, 'full_name', str(user.id))}))
-
-        while True:
-            data = await websocket.receive_text()
-            if data == "PING":
-                await websocket.send_text(json.dumps({"type": "PONG"}))
-            else:
-                try:
-                    message = json.loads(data)
-                    msg_type = message.get("type")
-                    if msg_type in ["LOCATION_UPDATE", "STOP_SHARING", "LOCATION_CLEARED"]:
-                        payload = message.get("payload", message)
-                        if msg_type == "LOCATION_UPDATE" and bus_id and "latitude" in payload:
-                            await prediction_service.update_bus_coord(int(bus_id), float(payload["latitude"]), float(payload["longitude"]))
-                        await location_analyzer.process_location_update(db, user, message)
-                except Exception as e:
-                    print(f"Error processing WS message: {e}")
-    except HTTPException as exc:
-        print(f"General WS auth failed: {exc.detail}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=str(exc.detail or "Unauthorized"))
-        return
-    except WebSocketDisconnect:
-        if user_id:
-            websocket_manager.disconnect(user_id, websocket)
-            await location_analyzer.remove_location(user_id, bus_id, user_role)
-    except Exception as e:
-        print(f"General WS Error: {e}")
-        if user_id:
-            websocket_manager.disconnect(user_id, websocket)
-            await location_analyzer.remove_location(user_id, bus_id, user_role)
-    finally:
-        db.close()
 
 @api_router.post("/public-location")
 async def receive_public_location(data: dict = Body(...), db: Session = Depends(get_db)):
@@ -205,13 +140,13 @@ async def admin_get_all_locations(db: Session = Depends(get_db), current_user: m
     locations = []
     for u_id, loc in location_analyzer.active_locations.items():
         locations.append({
-            "entity_id": str(loc.get("bus_id")) if loc.get("role") == "driver" else str(u_id),
-            "entity_type": "bus" if loc.get("role") == "driver" else "student",
+            "entity_id": str(loc.get("bus_id")) if loc.get("user_role") == "driver" else str(u_id),
+            "entity_type": "bus" if loc.get("user_role") == "driver" else "student",
             "latitude": loc['lat'],
             "longitude": loc['lng'],
             "speed": loc.get('speed', 0.0),
-            "bearing": loc.get('bearing', 0.0),
-            "role": loc.get("role", "student"),
+            "bearing": loc.get('bearing', loc.get('direction', 0.0)),
+            "role": loc.get("user_role", "student"),
             "user_id": str(u_id),
             "timestamp": loc.get('timestamp', ''),
         })
@@ -257,6 +192,7 @@ api_router.include_router(drivers.router)
 api_router.include_router(stops.router)
 api_router.include_router(tracking.router)
 api_router.include_router(device_tokens.router)
+api_router.include_router(feedback.router)
 
 app.include_router(api_router)
 app.include_router(websocket_routes.router)

@@ -109,7 +109,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
     if (token == null) return;
     try {
       final uri = Uri.parse(
-          '${AppConfig.wsUrl}/api/ws/ws/location/$_busNumber?token=$token');
+          '${AppConfig.wsUrl}/api/ws/location/$_busNumber?token=$token');
       _locationChannel = WebSocketChannel.connect(uri);
     } catch (e) {
       debugPrint('WebSocket connect error: $e');
@@ -163,36 +163,42 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
   }
 
   Future<void> _stopSharing() async {
-    setState(() => _statusMessage = 'Stopping...');
-    await _positionSub?.cancel();
+    // Capture services before async operations
+    final locService = context.read<LocationService>();
+    final busNumber = _busNumber;
 
+    // Immediately stop position stream for instant response
+    await _positionSub?.cancel();
+    _positionSub = null;
+
+    // Send STOP signal and close WebSocket immediately
     if (_locationChannel?.sink != null) {
       try {
         _locationChannel!.sink.add(json.encode({
           'type': 'STOP_SHARING',
-          'bus_id': _busNumber,
+          'bus_id': busNumber,
           'role': 'driver',
-          'timestamp': DateTime.now().toIso8601String(),
         }));
-        await Future.delayed(Duration(milliseconds: 200));
       } catch (_) {}
-      await _locationChannel!.sink.close();
+      _locationChannel!.sink.close();
       _locationChannel = null;
     }
 
-    try {
-      final busId = int.tryParse(_busNumber ?? '');
-      if (busId != null) await ApiService.clearPublicLocation(busId);
-    } catch (_) {}
+    // Remove location and pop in background
+    if (busNumber != null) {
+      locService.removeLocation(busNumber);
+      final busId = int.tryParse(busNumber);
+      if (busId != null) {
+        ApiService.clearPublicLocation(busId); // fire-and-forget
+      }
+    }
 
     if (mounted) {
-      context.read<LocationService>().removeLocation(_busNumber ?? '');
       setState(() {
         _isSharing = false;
         _statusMessage = 'Sharing stopped';
       });
-      await Future.delayed(Duration(milliseconds: 500));
-      if (mounted) context.pop();
+      context.pop(); // Pop immediately, no delay
     }
   }
 

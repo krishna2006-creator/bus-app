@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:agni_college_bus_tracker/services/auth_service.dart';
 import 'package:agni_college_bus_tracker/services/bus_service.dart';
+import 'package:agni_college_bus_tracker/services/location_service.dart';
 import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
@@ -25,6 +26,17 @@ class _StaffDashboardState extends State<StaffDashboard> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Refresh announcements when dashboard opens
+      final announcementService = context.read<AnnouncementService>();
+      announcementService.initialize();
+    });
   }
 
   @override
@@ -58,6 +70,17 @@ class _StaffDashboardState extends State<StaffDashboard> {
             IconButton(
               icon: const Icon(Icons.settings),
               onPressed: () => _showDashboardSettings(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () async {
+                final locationService = context.read<LocationService>();
+                final announcementService = context.read<AnnouncementService>();
+                await busService.initialize();
+                await locationService.initialize();
+                await announcementService.initialize();
+              },
+              tooltip: 'Refresh data',
             ),
             IconButton(
               icon: Stack(

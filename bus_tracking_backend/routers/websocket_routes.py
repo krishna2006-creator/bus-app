@@ -256,6 +256,7 @@ async def websocket_stop_prediction_live(
     user = None
     user_id = None
     last_phase = 0
+    update_task = None
 
     try:
         await websocket.accept()
@@ -395,7 +396,7 @@ async def websocket_stop_prediction_live(
 
     except Exception as e:
         logger.error(f"Stop prediction WS error for user {user_id}: {e}")
-        if 'update_task' in dir():
+        if update_task is not None:
             update_task.cancel()
         if user_id:
             manager.disconnect(user_id, bus_id=0)
@@ -504,12 +505,12 @@ async def websocket_notifications(
     except WebSocketDisconnect:
         logger.info(f"Notification WebSocket disconnected for user {user_id}")
         if user_id:
-            await manager.disconnect(user_id, bus_id=0)
-    
+            manager.disconnect(user_id, bus_id=0)
+
     except Exception as e:
         logger.error(f"Notification WebSocket error for user {user_id}: {e}")
         if user_id:
-            await manager.disconnect(user_id, bus_id=0)
+            manager.disconnect(user_id, bus_id=0)
     
     finally:
         db.close()
@@ -589,7 +590,7 @@ async def get_bus_info(bus_id: int):
 
     return {
         "success": True,
-        "bus_id": bus_id,
+        "bus_id": bus_id,  
         "data": bus_info,
     }
 

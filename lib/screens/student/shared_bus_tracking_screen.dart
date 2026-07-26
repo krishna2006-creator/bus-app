@@ -70,7 +70,7 @@ class _SharedBusTrackingScreenState extends State<SharedBusTrackingScreen> {
 
     // Convert http://192.168.x.x:8000 to ws://192.168.x.x:8000
     final url =
-        '${AppConfig.wsUrl}/api/ws/ws/location/${widget.bus.id}?token=$token';
+        '${AppConfig.wsUrl}/api/ws/location/${widget.bus.id}?token=$token';
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(url));

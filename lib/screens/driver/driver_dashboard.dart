@@ -7,6 +7,9 @@ import 'package:agni_college_bus_tracker/widgets/pop_scope.dart';
 import 'package:agni_college_bus_tracker/services/auth_service.dart';
 import 'package:agni_college_bus_tracker/services/bus_service.dart';
 import 'package:agni_college_bus_tracker/services/trip_service.dart';
+import 'package:agni_college_bus_tracker/services/announcement_service.dart';
+import 'package:agni_college_bus_tracker/services/location_service.dart';
+import 'package:agni_college_bus_tracker/models/user.dart';
 import 'package:agni_college_bus_tracker/models/trip.dart';
 
 class DriverDashboard extends StatefulWidget {
@@ -17,6 +20,19 @@ class DriverDashboard extends StatefulWidget {
 }
 
 class _DriverDashboardState extends State<DriverDashboard> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Refresh data when dashboard opens
+      final announcementService = context.read<AnnouncementService>();
+      final locationService = context.read<LocationService>();
+      announcementService.initialize();
+      locationService.initialize();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
@@ -29,6 +45,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     final busService = context.watch<BusService>();
     final tripService = context.watch<TripService>();
     final user = authService.currentUser!;
+    final announcementService = context.watch<AnnouncementService>();
 
     final assignedBus = user.assignedBusNumber != null
         ? busService.getBusByNumber(user.assignedBusNumber!)
@@ -37,6 +54,11 @@ class _DriverDashboardState extends State<DriverDashboard> {
     final activeTrip = assignedBus != null
         ? tripService.getActiveTripForBus(assignedBus.busNumber)
         : null;
+
+    final announcements = announcementService
+        .getAnnouncementsForRole(UserRole.driver)
+        .take(3)
+        .toList();
 
     return AppPopScope(
       canPop: false,
@@ -95,6 +117,19 @@ class _DriverDashboardState extends State<DriverDashboard> {
                         ),
                         IconButton(
                           icon:
+                              const Icon(Icons.refresh, color: AppColors.white),
+                          onPressed: () async {
+                            final announcementService =
+                                context.read<AnnouncementService>();
+                            final locationService =
+                                context.read<LocationService>();
+                            await announcementService.initialize();
+                            await locationService.initialize();
+                          },
+                          tooltip: 'Refresh data',
+                        ),
+                        IconButton(
+                          icon:
                               const Icon(Icons.logout, color: AppColors.white),
                           onPressed: () async {
                             await context.read<AuthService>().logout(context);
@@ -145,6 +180,23 @@ class _DriverDashboardState extends State<DriverDashboard> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),
+                      if (announcements.isNotEmpty) ...[
+                        const Text('Latest Announcements',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        for (var a in announcements)
+                          Card(
+                            child: ListTile(
+                              title: Text(a.title),
+                              subtitle: Text(a.message,
+                                  maxLines: 2, overflow: TextOverflow.ellipsis),
+                              trailing: const Icon(Icons.campaign,
+                                  color: Colors.orange),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                      ],
                       GridView.count(
                         shrinkWrap: true,
                         crossAxisCount: 2,

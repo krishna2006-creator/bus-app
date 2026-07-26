@@ -8,7 +8,7 @@ from ..utils.auth_utils import get_current_user
 import shutil
 import os
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -62,7 +62,7 @@ async def list_documents(
                 file_type = "pdf" if file_ext == ".pdf" else ("image" if file_ext in [".jpg", ".jpeg", ".png"] else "file")
 
                 documents.append(DocumentResponse(
-                    id=filename,
+                    id=abs(hash(filename)) % 1000000,
                     name=filename,
                     url=f"/uploads/{filename}",
                     file_type=file_type,
@@ -109,14 +109,15 @@ async def upload_document(
     # Construct the file URL so the frontend can open it directly
     file_url = f"/uploads/{file.filename}"
 
-    # Notify students and staff about the new document
+    # Notify students and staff about the new document (exclude the uploader)
     await notification_service.broadcast_to_role(
         db,
         title="New Document Available",
         message=f"A new document '{name}' has been uploaded.",
         category="DOCUMENT_SHARED",
         target_role="all",
-        data={"file_name": name, "url": file_url, "document_id": db_document.id}
+        data={"file_name": name, "url": file_url, "document_id": db_document.id},
+        exclude_user_id=current_user.id
     )
 
     return {

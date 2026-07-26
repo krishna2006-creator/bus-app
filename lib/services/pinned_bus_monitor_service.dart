@@ -103,8 +103,19 @@ class PinnedBusMonitorService extends ChangeNotifier {
               ..etaMinutes = -1
               ..status = 'unknown';
             notifyListeners();
+          } else {
+            // Bus was not tracked before, no notification needed
           }
           continue;
+        }
+
+        // Check if bus just started sharing location (was unknown before)
+        final wasUnknown = !_trackingData.containsKey(pinnedBusNumber) ||
+            _trackingData[pinnedBusNumber]!.status == 'unknown';
+
+        // Send notification when bus starts sharing location
+        if (wasUnknown) {
+          await _sendBusStartedNotification(pinnedBusNumber);
         }
 
         final distance = _calculateDistance(
@@ -182,6 +193,20 @@ class PinnedBusMonitorService extends ChangeNotifier {
       title: 'Bus $busNumber Approaching!',
       message: '${distanceKm.toStringAsFixed(2)}km away - ETA ${etaMinutes}min',
       category: 'BUS_NEARBY',
+      createdAt: DateTime.now(),
+    );
+    await _notificationService.addNotification(notification);
+  }
+
+  Future<void> _sendBusStartedNotification(String busNumber) async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+    final notification = AppNotification(
+      id: 'bus_started_${busNumber}_${DateTime.now().millisecondsSinceEpoch}',
+      userId: user.id,
+      title: 'Bus $busNumber Started',
+      message: 'Bus $busNumber has started sharing location',
+      category: 'BUS_STARTED',
       createdAt: DateTime.now(),
     );
     await _notificationService.addNotification(notification);

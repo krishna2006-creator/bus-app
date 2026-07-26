@@ -213,7 +213,7 @@ async def record_live_location(
 
     # 3. IMMEDIATE RESPONSE: Return input data immediately to the client
     return LiveLocationResponse(
-        id=str(int(datetime.now().timestamp())),
+        id=int(datetime.now().timestamp()),
         entity_id=location_data.entity_id,
         entity_type=location_data.entity_type,
         latitude=location_data.latitude,
@@ -300,7 +300,7 @@ async def get_all_active_locations_from_cache(
     user_role = str(current_user.role).lower()
     
     for u_id, loc in location_analyzer.active_locations.items():
-        loc_role = loc.get("role", "student")
+        loc_role = loc.get("user_role", "student")
         
         # Students only see buses (driver role)
         if user_role == "student" and loc_role != "driver":
@@ -310,14 +310,14 @@ async def get_all_active_locations_from_cache(
         entity_id = str(loc.get("bus_id")) if loc_role == "driver" else str(u_id)
 
         active_locs.append(LiveLocationResponse(
-            id=str(u_id), # Keep ID consistent with broadcast updates
+            id=0, # Keep ID consistent with broadcast updates
             entity_id=entity_id,
             entity_type=entity_type,
             latitude=loc['lat'],
             longitude=loc['lng'],
             speed=loc['speed'],
-            bearing=loc.get('bearing', 0.0),
-            timestamp=datetime.fromisoformat(loc['timestamp']) if 'timestamp' in loc else datetime.now(),
+            bearing=loc.get('bearing', loc.get('direction', 0.0)),
+            timestamp=datetime.fromtimestamp(loc['timestamp']) if 'timestamp' in loc else datetime.now(),
             accuracy=loc.get('accuracy', 0.0)
         ))
     return active_locs

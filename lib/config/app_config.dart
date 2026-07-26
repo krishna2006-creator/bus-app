@@ -4,9 +4,9 @@
 class AppConfig {
   // Backend Configuration
   static const String apiScheme =
-      String.fromEnvironment('API_SCHEME', defaultValue: 'https');
+      String.fromEnvironment('API_SCHEME', defaultValue: 'http');
   static const String wsScheme =
-      String.fromEnvironment('WS_SCHEME', defaultValue: 'wss');
+      String.fromEnvironment('WS_SCHEME', defaultValue: 'ws');
 
   static String get domain {
     const override = String.fromEnvironment('API_DOMAIN');
@@ -14,8 +14,12 @@ class AppConfig {
       return override;
     }
 
-    // Default to Railway production backend
-    return 'bus-tracking-Uios.up.railway.app';
+    // Production backend URL (Railway)
+    const productionUrl = 'bus-tracking-backend-production.up.railway.app';
+
+    // For web builds, use production URL
+    // For mobile builds, use the override or fallback
+    return productionUrl;
   }
 
   static String get baseUrl => '$apiScheme://$domain/api';

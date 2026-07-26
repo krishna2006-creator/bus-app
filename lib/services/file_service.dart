@@ -28,12 +28,14 @@ class FileService extends ChangeNotifier {
     // First try to load from backend
     await _syncDocumentsFromBackend();
 
-    // Then load from local storage as fallback
-    final prefs = await SharedPreferences.getInstance();
-    final filesJson = prefs.getStringList(_filesKey) ?? [];
-    if (filesJson.isNotEmpty) {
-      _files =
-          filesJson.map((f) => UploadedFile.fromJson(jsonDecode(f))).toList();
+    // Only use local storage as fallback if backend returned no data
+    if (_files.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final filesJson = prefs.getStringList(_filesKey) ?? [];
+      if (filesJson.isNotEmpty) {
+        _files =
+            filesJson.map((f) => UploadedFile.fromJson(jsonDecode(f))).toList();
+      }
     }
     notifyListeners();
   }
@@ -218,10 +220,20 @@ class FileService extends ChangeNotifier {
 
   Future<void> deleteFile(String id) async {
     try {
-      final fileToDelete = _files.firstWhere((f) => f.id == id);
-      final file = File(fileToDelete.path);
-      if (await file.exists()) {
-        await file.delete();
+      // Call backend API to delete document
+      try {
+        final response = await http.delete(
+          Uri.parse('${ApiService.baseUrl}/documents/$id'),
+          headers: await ApiService.getHeaders(),
+        );
+        if (response.statusCode == 200) {
+          debugPrint('Document deleted from backend successfully');
+        } else {
+          debugPrint(
+              'Backend delete failed: ${response.statusCode} - ${response.body}');
+        }
+      } catch (e) {
+        debugPrint('Error deleting from backend: $e');
       }
 
       _files.removeWhere((f) => f.id == id);

@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
-from database import models
-from schemas import user as user_schemas
-from schemas import bus as bus_schemas
-from schemas import announcement as announcement_schemas
-from schemas import request as request_schemas
+from bus_tracking_backend.database import models
+from bus_tracking_backend.schemas import user as user_schemas
+from bus_tracking_backend.schemas import bus as bus_schemas
+from bus_tracking_backend.schemas import announcement as announcement_schemas
+from bus_tracking_backend.schemas import request as request_schemas
 from datetime import datetime
 
 # --- User CRUD ---

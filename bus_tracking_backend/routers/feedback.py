@@ -1,0 +1,86 @@
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from typing import List
+from datetime import datetime
+
+from bus_tracking_backend.database.database import get_db
+from bus_tracking_backend.database import models
+from bus_tracking_backend.utils.auth_utils import get_current_user
+
+router = APIRouter(prefix="/feedback", tags=["feedback"])
+
+@router.get("/")
+async def get_all_feedback(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Admin: Get all feedback. Users: Get their own feedback."""
+    if current_user.role == "admin":
+        feedbacks = db.query(models.Feedback).order_by(models.Feedback.created_at.desc()).all()
+    else:
+        feedbacks = db.query(models.Feedback).filter(
+            models.Feedback.user_id == current_user.id
+        ).order_by(models.Feedback.created_at.desc()).all()
+    
+    result = []
+    for f in feedbacks:
+        result.append({
+            "id": f.id,
+            "userId": str(f.user_id),
+            "userName": f.user_name,
+            "userRole": f.user_role,
+            "subject": f.subject,
+            "message": f.message,
+            "reply": f.reply,
+            "replied": f.replied,
+            "createdAt": f.created_at.isoformat() if f.created_at else None,
+            "repliedAt": f.replied_at.isoformat() if f.replied_at else None,
+        })
+    return result
+
+@router.post("/")
+async def submit_feedback(
+    data: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Submit feedback or complaint."""
+    feedback = models.Feedback(
+        user_id=current_user.id,
+        user_name=current_user.full_name or "Anonymous",
+        user_role=current_user.role,
+        subject=data.get("subject", ""),
+        message=data.get("message", ""),
+        replied=False,
+        created_at=datetime.utcnow(),
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return {
+        "status": "success",
+        "id": feedback.id,
+        "message": "Feedback submitted successfully"
+    }
+
+@router.post("/{feedback_id}/reply")
+async def reply_to_feedback(
+    feedback_id: int,
+    data: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Admin: Reply to feedback."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    feedback = db.query(models.Feedback).filter(models.Feedback.id == feedback_id).first()
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    
+    feedback.reply = data.get("reply", "")
+    feedback.replied = True
+    feedback.replied_at = datetime.utcnow()
+    db.commit()
+    
+    return {"status": "success", "message": "Reply sent successfully"}

@@ -28,6 +28,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    // Refresh data when dashboard opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<BusService>().initialize();
+      context.read<LocationService>().initialize();
+      context.read<TripService>().initialize();
+    });
   }
 
   @override
@@ -222,6 +229,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             onPressed: () => _showDashboardSettings(context),
                           ),
                           IconButton(
+                            icon: Icon(Icons.refresh, color: AppColors.white),
+                            onPressed: () async {
+                              final busService = context.read<BusService>();
+                              final locationService =
+                                  context.read<LocationService>();
+                              final tripService = context.read<TripService>();
+                              await busService.initialize();
+                              await locationService.initialize();
+                              await tripService.initialize();
+                              if (mounted) setState(() {});
+                            },
+                            tooltip: 'Refresh data',
+                          ),
+                          IconButton(
                             icon: Icon(Icons.logout, color: AppColors.white),
                             onPressed: () => _handleLogout(context),
                           ),
@@ -245,10 +266,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           const SizedBox(width: AppSpacing.md),
                           _StatCard(
                             icon: Icons.trip_origin,
-                            count: tripService.trips
-                                .where((t) => t.status.name == 'active')
-                                .length
-                                .toString(),
+                            count: tripService.activeTrips.length.toString(),
                             label: 'Active Trips',
                           ),
                         ],
@@ -280,13 +298,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         Positioned(
                           top: 10,
                           right: 10,
-                          child: FloatingActionButton.small(
-                            heroTag: 'info_btn',
-                            onPressed: () =>
-                                setState(() => _showBusList = !_showBusList),
-                            backgroundColor: AppColors.white,
-                            child: Icon(Icons.info_outline,
-                                color: AppColors.adminBlue),
+                          child: Column(
+                            children: [
+                              FloatingActionButton.small(
+                                heroTag: 'refresh_btn',
+                                onPressed: () async {
+                                  await context
+                                      .read<LocationService>()
+                                      .initialize();
+                                  setState(() {});
+                                },
+                                backgroundColor: AppColors.white,
+                                child: const Icon(Icons.refresh,
+                                    color: AppColors.adminBlue),
+                              ),
+                              const SizedBox(height: 8),
+                              FloatingActionButton.small(
+                                heroTag: 'info_btn',
+                                onPressed: () => setState(
+                                    () => _showBusList = !_showBusList),
+                                backgroundColor: AppColors.white,
+                                child: Icon(Icons.info_outline,
+                                    color: AppColors.adminBlue),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -356,6 +391,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           label: 'Notifications',
                           color: AppColors.info,
                           onTap: () => context.push('/notifications'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: _QuickActionButton(
+                          icon: Icons.feedback,
+                          label: 'Feedbacks',
+                          color: AppColors.warning,
+                          onTap: () => context.push('/admin/feedback'),
                         ),
                       ),
                     ],

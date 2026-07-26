@@ -35,13 +35,14 @@ async def create_announcement(
     
     db_announcement = crud.create_announcement(db=db, announcement=announcement, user_id=current_user.id)
     
-    # Send real-time notification for the new announcement
+    # Send real-time notification for the new announcement (exclude the creator)
     await notification_service.broadcast_to_role(
         db,
         title=db_announcement.title,
         message=db_announcement.message,
         category="ANNOUNCEMENT",
-        target_role=db_announcement.target_role
+        target_role=db_announcement.target_role,
+        exclude_user_id=current_user.id
     )
     
     return db_announcement

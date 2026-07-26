@@ -1,9 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'firebase_options.dart' show DefaultFirebaseOptions;
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
 import 'theme.dart';
 import 'models/user.dart';
 import 'models/bus.dart';
@@ -19,6 +19,7 @@ import 'services/trip_service.dart';
 import 'services/file_service.dart';
 import 'services/live_tracking_service.dart';
 import 'services/pinned_bus_monitor_service.dart';
+import 'services/feedback_service.dart';
 import 'package:agni_college_bus_tracker/providers/stop_prediction_provider.dart';
 import 'screens/home_page.dart';
 import 'screens/login_page.dart';
@@ -40,6 +41,8 @@ import 'screens/student/student_share_location_screen.dart';
 import 'screens/driver/driver_share_location_screen.dart';
 import 'screens/file_viewer_screen.dart';
 import 'screens/student/share_document_page.dart';
+import 'screens/student/student_feedback_page.dart';
+import 'screens/admin/admin_feedback_page.dart';
 import 'package:agni_college_bus_tracker/screens/student/stop_prediction_screen_v2.dart';
 import 'package:agni_college_bus_tracker/screens/student/pinned_bus_tracking_screen.dart';
 import 'package:agni_college_bus_tracker/screens/student/shared_bus_tracking_screen.dart';
@@ -74,7 +77,15 @@ Future<void> safeInit(String name, Future<void> Function() fn) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp();
+    // For web, we need to pass FirebaseOptions explicitly
+    // For Android/iOS, the google-services.json is used automatically
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } else {
+      await Firebase.initializeApp();
+    }
   } catch (e) {
     debugPrint('Firebase init failed: $e');
   }
@@ -104,6 +115,7 @@ void main() async {
   final fileService = FileService(notificationService);
 
   final tripService = TripService();
+  final feedbackService = FeedbackService(authService);
   final stopPredictionProvider = StopPredictionProvider();
   stopPredictionProvider.setLiveTrackingService(liveTrackingService);
 
@@ -128,6 +140,7 @@ void main() async {
     safeInit('request', () => requestService.initialize()),
     safeInit('trip', () => tripService.initialize()),
     safeInit('file', () => fileService.initialize()),
+    safeInit('feedback', () => feedbackService.initialize()),
   ]);
 
   // Set callback for auth service to reconnect notifications after login
@@ -161,6 +174,7 @@ void main() async {
     notificationService: notificationService,
     requestService: requestService,
     tripService: tripService,
+    feedbackService: feedbackService,
     stopPredictionProvider: stopPredictionProvider,
     fileService: fileService,
     pinnedBusMonitorService: pinnedBusMonitorService,
@@ -178,6 +192,7 @@ class MyApp extends StatelessWidget {
   final RequestService requestService;
   final TripService tripService;
   final FileService fileService;
+  final FeedbackService feedbackService;
   final StopPredictionProvider stopPredictionProvider;
   final PinnedBusMonitorService pinnedBusMonitorService;
   final GlobalKey<NavigatorState> navigatorKey;
@@ -193,6 +208,7 @@ class MyApp extends StatelessWidget {
     required this.requestService,
     required this.tripService,
     required this.fileService,
+    required this.feedbackService,
     required this.stopPredictionProvider,
     required this.pinnedBusMonitorService,
     required this.navigatorKey,
@@ -211,6 +227,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: requestService),
         ChangeNotifierProvider.value(value: tripService),
         ChangeNotifierProvider.value(value: fileService),
+        ChangeNotifierProvider.value(value: feedbackService),
         ChangeNotifierProvider.value(value: stopPredictionProvider),
         ChangeNotifierProvider.value(value: pinnedBusMonitorService),
       ],
@@ -508,6 +525,18 @@ class MyApp extends StatelessWidget {
               name: 'notifications',
               pageBuilder: (context, state) =>
                   const MaterialPage(child: NotificationsPage()),
+            ),
+            GoRoute(
+              path: '/student/feedback',
+              name: 'student-feedback',
+              pageBuilder: (context, state) =>
+                  const MaterialPage(child: StudentFeedbackPage()),
+            ),
+            GoRoute(
+              path: '/admin/feedback',
+              name: 'admin-feedback',
+              pageBuilder: (context, state) =>
+                  const MaterialPage(child: AdminFeedbackPage()),
             ),
           ],
         ),

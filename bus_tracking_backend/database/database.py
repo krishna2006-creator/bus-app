@@ -2,7 +2,7 @@ import logging
 from sqlalchemy import create_engine, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from config import settings
+from bus_tracking_backend.config import settings
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import OperationalError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type

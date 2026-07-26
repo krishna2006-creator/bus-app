@@ -47,8 +47,9 @@ def get_bus_live_location(bus_id: int, db: Session = Depends(get_db)):
     if bus_info and bus_info.get("has_last_location"):
         last_location = bus_info["last_known_location"]
         return bus_schemas.LiveLocationResponse(
-            id=last_location.user_id,
+            id=bus_id,
             bus_id=bus_id,
+            user_id=str(last_location.user_id),
             latitude=last_location.latitude,
             longitude=last_location.longitude,
             speed=last_location.speed,
@@ -183,6 +184,8 @@ def delete_bus(
 @router.websocket("/{bus_id}/live_location")
 async def bus_live_location_websocket(websocket: WebSocket, bus_id: int, token: str = None):
     db = SessionLocal()
+    user = None
+    role_str = "student"
     try:
         user = get_current_user(token, db)
         if not user:
@@ -212,10 +215,12 @@ async def bus_live_location_websocket(websocket: WebSocket, bus_id: int, token: 
             await websocket.send_text(json.dumps({"type": "PONG"}))
 
     except WebSocketDisconnect:
-        await location_analyzer.remove_location(user.id, bus_id, role_str)
+        if user:
+            await location_analyzer.remove_location(user.id, bus_id, role_str)
     except Exception as e:
         print(f"Bus WebSocket Error: {e}")
-        await location_analyzer.remove_location(user.id, bus_id, role_str)
+        if user:
+            await location_analyzer.remove_location(user.id, bus_id, role_str)
     finally:
         db.close()
 

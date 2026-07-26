@@ -460,20 +460,14 @@ class WebSocketManager:
         user_id_str = str(user_id)
         is_official_sender = bus_room.can_send_location(user_id_str)
         
-        # We allow students to broadcast their individual locations even if they 
+        # We allow students and drivers to broadcast their individual locations even if they 
         # aren't the primary sender for the bus (which is reserved for drivers/boarded students).
         is_student_sharing = location_data.user_role == "student"
+        is_driver_sharing = location_data.user_role == "driver"
 
-        if not is_official_sender and not is_student_sharing:
-            return {
-                "success": False,
-                "error": "User not authorized to send location for this bus",
-                "user_id": user_id_str,
-                "bus_id": bus_id,
-                "current_sender": bus_room.location_sender_id
-            }
-
-        # Broadcast the individual update to the bus room
+        # Always broadcast the location update to the bus room - do NOT reject
+        # REST API location updates from drivers who aren't WebSocket-connected.
+        # The post_public_location endpoint handles authentication separately.
         message = {
             "type": "LOCATION_UPDATE",
             "bus_id": bus_id,
@@ -483,11 +477,18 @@ class WebSocketManager:
 
         sent_count = await bus_room.broadcast_to_room(message)
 
+        # Also broadcast to ALL connected users so phones that aren't in this
+        # specific bus room still receive the location update in real-time.
+        await self.broadcast(message)
+
         return {
             "success": True,
             "bus_id": bus_id,
             "user_id": user_id_str,
             "broadcast_to_count": sent_count,
+            "is_official_sender": is_official_sender,
+            "is_student_sharing": is_student_sharing,
+            "is_driver_sharing": is_driver_sharing,
         }
 
     async def send_last_location_to_user(

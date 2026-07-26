@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "com.agni.bus.tracker"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // NDK version pinned below for CMake compatibility
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -34,11 +34,22 @@ android {
         versionName = flutter.versionName
     }
 
+    // Pin NDK version to 27 which is compatible with CMake 3.22.1
+    // NDK 28 requires CMake 3.23+ which is not bundled with this SDK
+    ndkVersion = "27.0.12077973"
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Disable R8 minification to avoid build issues
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

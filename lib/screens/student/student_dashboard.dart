@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:agni_college_bus_tracker/services/auth_service.dart';
 import 'package:agni_college_bus_tracker/services/bus_service.dart';
+import 'package:agni_college_bus_tracker/services/location_service.dart';
 import 'package:agni_college_bus_tracker/providers/stop_prediction_provider.dart';
 import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
@@ -26,12 +27,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
-    // Ensure stop prediction data starts loading as soon as dashboard opens
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<StopPredictionProvider>().initAsync();
-      }
-    });
+    // Data will load through provider watchers and refresh buttons
   }
 
   @override
@@ -62,11 +58,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // Refresh bus list and locations
-              busService.initialize();
+            onPressed: () async {
+              // Refresh bus list, locations, announcements
+              final locationService = context.read<LocationService>();
+              final announcementService = context.read<AnnouncementService>();
+              await busService.initialize();
+              await locationService.initialize();
+              await announcementService.initialize();
             },
-            tooltip: 'Refresh buses',
+            tooltip: 'Refresh data',
           ),
           IconButton(
             icon: Stack(
@@ -192,6 +192,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         icon: Icons.description,
                         color: Colors.blue,
                         onTap: () => context.push('/student/documents'))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                    child: _buildFeatureCard(context,
+                        title: "Feedback / Complaint",
+                        description: "Send feedback to admin",
+                        icon: Icons.feedback,
+                        color: Colors.purple,
+                        onTap: () => context.push('/student/feedback'))),
+                const SizedBox(width: 12),
+                const Expanded(child: SizedBox()),
               ],
             ),
             const SizedBox(height: 16),

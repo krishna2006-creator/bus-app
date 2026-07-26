@@ -10,14 +10,13 @@ import 'package:agni_college_bus_tracker/services/api_service.dart';
 class AnnouncementService extends ChangeNotifier {
   static const _announcementsKey = 'announcements';
   List<Announcement> _announcements = [];
-
   AnnouncementService(NotificationService notificationService);
 
   List<Announcement> get announcements => _announcements;
 
   Future<void> initialize() async {
     try {
-      final List<dynamic> data = await ApiService.get('/announcements/');
+      final List<dynamic> data = await ApiService.get('/announcements');
       _announcements = data
           .map((e) => Announcement.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -90,7 +89,9 @@ class AnnouncementService extends ChangeNotifier {
       _announcements.insert(0, announcement);
       await _saveAnnouncements();
     }
-    notifyListeners();
+
+    // Notifications are handled by the backend via WebSocket + FCM push.
+    // No local notifications needed here to avoid duplicate alerts on the creator's device.
   }
 
   Future<void> deleteAnnouncement(String id) async {

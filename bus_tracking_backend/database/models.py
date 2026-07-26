@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from database.database import Base
+from bus_tracking_backend.database.database import Base
 import enum
 
 class UserRole(str, enum.Enum):
@@ -178,3 +178,19 @@ class Document(Base):
     created_at = Column(DateTime, default=func.now())
 
     uploaded_by = relationship("User")
+
+class Feedback(Base):
+    """Feedback and complaints submitted by users"""
+    __tablename__ = "feedback"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    user_name = Column(String, nullable=True)
+    user_role = Column(String, nullable=True)
+    subject = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    reply = Column(Text, nullable=True)
+    replied = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+    replied_at = Column(DateTime, nullable=True)
+    
+    user = relationship("User")

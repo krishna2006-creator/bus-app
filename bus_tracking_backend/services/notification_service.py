@@ -85,10 +85,11 @@ class NotificationService:
                 except Exception as exc2:
                     logger.warning(f"FCM REST fallback failed: {exc2}")
 
-    async def broadcast_to_role(self, db: Session, title: str, message: str, category: str, target_role: str = "all", data: dict = None):
+    async def broadcast_to_role(self, db: Session, title: str, message: str, category: str, target_role: str = "all", data: dict = None, exclude_user_id: int = None):
         """Broadcasts a notification to ALL users of a specific role (WebSocket + FCM).
         Sends to ALL users in the database with that role, not just WebSocket-connected ones.
-        This ensures offline users still get FCM push notifications."""
+        This ensures offline users still get FCM push notifications.
+        If exclude_user_id is provided, that user will not receive the notification."""
         role_norm = target_role.lower() if target_role else "all"
         query = db.query(models.User)
         if role_norm != 'all':
@@ -98,6 +99,8 @@ class NotificationService:
         all_users = query.all()
         
         for user in all_users:
+            if exclude_user_id is not None and user.id == exclude_user_id:
+                continue
             await self.send_personal_notification(user.id, title, message, category, data=data)
         
         logger.info(f"Broadcast '{category}' sent to {len(all_users)} {target_role} users (WebSocket + FCM).")

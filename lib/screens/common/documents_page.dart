@@ -31,9 +31,10 @@ class _DocumentsPageState extends State<DocumentsPage> {
     final fileService = context.watch<FileService>();
     final authService = context.watch<AuthService>();
     final user = authService.currentUser;
-    // Allow Admins and Staff to delete documents
-    final canDelete =
-        user?.role == UserRole.admin || user?.role == UserRole.staff;
+    // Allow Admins, Staff, and Drivers to delete documents
+    final canDelete = user?.role == UserRole.admin ||
+        user?.role == UserRole.staff ||
+        user?.role == UserRole.driver;
     final isAdmin = user?.role == UserRole.admin;
 
     final files = fileService.files;

@@ -1,3 +1,4 @@
+import 'package:agni_college_bus_tracker/config/app_config.dart';
 import 'package:agni_college_bus_tracker/models/document.dart';
 
 class UploadedFile {
@@ -7,8 +8,8 @@ class UploadedFile {
   final DocumentType type;
 
   UploadedFile({
-    required this.id, 
-    required this.name, 
+    required this.id,
+    required this.name,
     required this.path,
     required this.type,
   });
@@ -29,5 +30,5 @@ class UploadedFile {
         'type': type.name,
       };
 
-  String get fileURL => 'http://10.0.2.2:8000/storage/$path';
+  String get fileURL => '${AppConfig.baseUrl}/storage/$path';
 }

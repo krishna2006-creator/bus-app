@@ -6,9 +6,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from config import settings
-from database.database import get_db
-from database import models
+from bus_tracking_backend.config import settings
+from bus_tracking_backend.database.database import get_db
+from bus_tracking_backend.database import models
 
 
 def normalize_role(role: Optional[object]) -> str:

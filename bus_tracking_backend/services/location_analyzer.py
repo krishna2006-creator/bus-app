@@ -51,7 +51,7 @@ class LocationAnalyzer:
 
         lat = float(payload.get("latitude") or payload.get("lat", 0))
         lng = float(payload.get("longitude") or payload.get("lng", 0))
-        speed = float(payload.get("speed") or payload.get("speed", 0))
+        speed = float(payload.get("speed", 0))
         bearing = float(payload.get("bearing") or payload.get("direction", 0.0))
         accuracy = float(payload.get("accuracy") or 0.0)
 
@@ -73,7 +73,7 @@ class LocationAnalyzer:
         location_dict["bus_id"] = bus_id
         location_dict["lat"] = lat
         location_dict["lng"] = lng
-        self.active_locations[str(u_id)] = location_dict
+        self.active_locations[str(bus_id)] = location_dict
 
         # Update prediction service with latest bus coordinates for distance calculations
         from .prediction_service import prediction_service
@@ -176,7 +176,9 @@ class LocationAnalyzer:
         """Explicitly removes a location from cache and signals all clients."""
         u_id_str = str(u_id)
 
-        if u_id_str in self.active_locations:
+        if bus_id and str(bus_id) in self.active_locations:
+            del self.active_locations[str(bus_id)]
+        elif u_id_str in self.active_locations:
             del self.active_locations[u_id_str]
 
         clear_signal = {
@@ -206,14 +208,14 @@ class LocationAnalyzer:
     def update_student_state(self, user_id: Any, boarded: bool, bus_id: int = None):
         """Updates the tracking phase for a student."""
         self.user_trip_phases[user_id] = "on_board" if boarded else "waiting"
-        if bus_id and str(user_id) in self.active_locations:
-            self.active_locations[str(user_id)]["bus_id"] = bus_id
+        if bus_id and str(bus_id) in self.active_locations:
+            self.active_locations[str(bus_id)]["bus_id"] = bus_id
 
     async def analyze_buses_for_student(self, db: Session, lat: float, lon: float, user_id: Any):
         """Analyzes nearby buses and provides ETAs."""
         results = []
         for sender_id, loc in self.active_locations.items():
-            if loc.get("role") == "driver" and loc.get("bus_id"):
+            if loc.get("user_role") == "driver" and loc.get("bus_id"):
                 bus_id = loc["bus_id"]
                 dist = calculate_distance_km(lat, lon, loc["lat"], loc["lng"])
                 if dist < 10.0:

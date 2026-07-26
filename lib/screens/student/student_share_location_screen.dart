@@ -136,7 +136,7 @@ class _StudentShareLocationScreenState
     if (token == null) return;
 
     final uri = Uri.parse(
-        '${AppConfig.wsUrl}/api/ws/ws/location/${widget.bus.id}?token=$token');
+        '${AppConfig.wsUrl}/api/ws/location/${widget.bus.id}?token=$token');
     _locationChannel = WebSocketChannel.connect(uri);
   }
 
@@ -204,43 +204,32 @@ class _StudentShareLocationScreenState
 
   /// Stop sharing clears location from ALL sources!
   Future<void> _stopSharing() async {
-    setState(() => _statusMessage = 'Stopping...');
-
-    // 1. Cancel position stream and auto-refresh timer
-    await _positionSub?.cancel();
+    _positionSub?.cancel();
+    _positionSub = null;
     _autoRefreshTimer?.cancel();
 
-    // 2. Send STOP via WebSocket
     if (_locationChannel != null) {
       try {
         _locationChannel!.sink.add(json.encode({
           "type": "STOP_SHARING",
           "bus_id": widget.bus.id,
           "role": "student",
-          "timestamp": DateTime.now().millisecondsSinceEpoch / 1000,
         }));
-        await Future.delayed(const Duration(milliseconds: 200));
       } catch (_) {}
-      await _locationChannel!.sink.close();
+      _locationChannel!.sink.close();
       _locationChannel = null;
     }
 
-    // 3. Clear from backend
-    try {
-      await ApiService.clearPublicLocation(widget.bus.id);
-    } catch (_) {}
+    context.read<LocationService>().removeLocation(widget.bus.busNumber);
+    ApiService.clearPublicLocation(widget.bus.id);
 
-    // 4. Remove from local state
-    final locService = context.read<LocationService>();
-    locService.removeLocation(widget.bus.busNumber);
-
-    setState(() {
-      _isSharing = false;
-      _statusMessage = 'Sharing stopped';
-    });
-
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (mounted) context.pop();
+    if (mounted) {
+      setState(() {
+        _isSharing = false;
+        _statusMessage = 'Sharing stopped';
+      });
+      context.pop();
+    }
   }
 
   void _setStatus(String message, {bool isError = false}) {

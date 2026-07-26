@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:agni_college_bus_tracker/models/app_notification.dart';
@@ -38,6 +39,13 @@ class NotificationService extends ChangeNotifier {
       debugPrint('Failed to initialize local notifications: $e');
     }
 
+    // Request notification permissions from the OS (required for Android 13+)
+    try {
+      await requestPermissions();
+    } catch (e) {
+      debugPrint('Failed to request notification permissions: $e');
+    }
+
     try {
       await _initializeFirebaseMessaging();
     } catch (e) {
@@ -66,7 +74,8 @@ class NotificationService extends ChangeNotifier {
   Future<void> _initializeFirebaseMessaging() async {
     try {
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
 
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken != null) {
@@ -106,8 +115,13 @@ class NotificationService extends ChangeNotifier {
     if (kIsWeb) return;
     if (_localNotificationsInitialized) return;
 
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
+    // Use Android default notification icon
+    const androidInit = AndroidInitializationSettings('');
+    const iosInit = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
 
     const initSettings = InitializationSettings(
       android: androidInit,
@@ -186,17 +200,30 @@ class NotificationService extends ChangeNotifier {
                 title: n.title,
                 body: n.message,
                 notificationDetails: NotificationDetails(
-                  android: const AndroidNotificationDetails(
+                  android: AndroidNotificationDetails(
                     'bus_alerts',
                     'Bus Alerts',
-                    channelDescription: 'Bus tracking alerts',
+                    channelDescription: 'Bus tracking alerts and updates',
                     importance: Importance.max,
                     priority: Priority.high,
                     playSound: true,
+                    enableVibration: true,
+                    // Show the notification even in DND mode
+                    visibility: NotificationVisibility.public,
+                    icon: '',
+                    // Uses default notification sound from user settings
+                    color: const Color(0xFF1976D2),
+                    channelShowBadge: true,
+                    enableLights: true,
+                    ledColor: const Color(0xFF1976D2),
+                    ledOnMs: 1000,
+                    ledOffMs: 500,
                   ),
                   iOS: const DarwinNotificationDetails(
                     presentAlert: true,
                     presentSound: true,
+                    presentBadge: true,
+                    sound: 'default.wav',
                   ),
                 ),
                 payload: json.encode({'category': n.category, 'id': n.id}),
@@ -240,6 +267,50 @@ class NotificationService extends ChangeNotifier {
     _notifications.insert(0, n);
     await _save();
     notifyListeners();
+
+    // Show a real OS notification with sound for ALL notification types
+    // This covers: announcements, documents, requests, location shares,
+    // pinned bus alerts, stop predictions, and all dashboard notifications
+    if (!kIsWeb) {
+      try {
+        final notifId = int.tryParse(n.id.toString()) ??
+            (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+
+        await _localNotifications.show(
+          id: notifId,
+          title: n.title,
+          body: n.message,
+          notificationDetails: NotificationDetails(
+            android: AndroidNotificationDetails(
+              'bus_alerts',
+              'Bus Alerts',
+              channelDescription: 'Bus tracking alerts and updates',
+              importance: Importance.max,
+              priority: Priority.high,
+              playSound: true,
+              enableVibration: true,
+              visibility: NotificationVisibility.public,
+              icon: '@mipmap/ic_launcher',
+              color: const Color(0xFF1976D2),
+              channelShowBadge: true,
+              enableLights: true,
+              ledColor: const Color(0xFF1976D2),
+              ledOnMs: 1000,
+              ledOffMs: 500,
+            ),
+            iOS: const DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBadge: true,
+              sound: 'default.wav',
+            ),
+          ),
+          payload: json.encode({'category': n.category, 'id': n.id}),
+        );
+      } catch (e) {
+        debugPrint("Error showing local notification: $e");
+      }
+    }
   }
 
   Future<void> broadcastNotification(
@@ -279,8 +350,16 @@ class NotificationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<AppNotification> forUser(String userId) =>
-      _notifications.where((n) => n.userId == userId).toList();
+  List<AppNotification> forUser(String userId) {
+    return _notifications.where((n) {
+      // Primary filter: notifications assigned to this user
+      if (n.userId == userId) return true;
+
+      // For admin, show only admin-specific notifications
+      // For non-admin, show only their own notifications
+      return false;
+    }).toList();
+  }
 
   Future<void> notifyPinnedUsers(BusLocation loc, List<User> allUsers) async {
     final bus = loc.busNumber;
@@ -297,6 +376,8 @@ class NotificationService extends ChangeNotifier {
           createdAt: ts,
         );
         _notifications.insert(0, n);
+        // Show mobile notification with sound
+        await addNotification(n);
       }
     }
     await _save();

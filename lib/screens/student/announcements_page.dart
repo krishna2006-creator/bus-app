@@ -1,22 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:agni_college_bus_tracker/screens/common/announcements_page.dart';
 
 class StudentAnnouncementsPage extends StatelessWidget {
   const StudentAnnouncementsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Announcements'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: const Center(
-        child: Text('This is the student announcements page.'),
-      ),
-    );
+    return const AnnouncementsPage(title: 'Announcements');
   }
 }

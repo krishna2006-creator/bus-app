@@ -41,16 +41,34 @@ class Bus {
       };
 
   factory Bus.fromJson(Map<String, dynamic> json) => Bus(
-        id: json['id'] as int? ?? 0,
-        busNumber: json['busNumber'] as String,
-        route: json['route'] as String,
-        driverName: json['driverName'] as String?,
-        driverPhone: json['driverPhone'] as String?,
-        isOperating: json['isOperating'] as bool? ?? true,
-        stops: (json['stops'] as List?)?.cast<String>() ?? [],
-        studentCount: json['studentCount'] as int? ?? 0,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
+        id: json['id'] as int? ?? json['bus_id'] as int? ?? 0,
+        busNumber: (json['busNumber'] as String?) ??
+            (json['bus_number'] as String?) ??
+            '',
+        route:
+            (json['route'] as String?) ?? (json['bus_route'] as String?) ?? '',
+        driverName:
+            json['driverName'] as String? ?? json['driver_name'] as String?,
+        driverPhone:
+            json['driverPhone'] as String? ?? json['driver_phone'] as String?,
+        isOperating: json['isOperating'] as bool? ??
+            json['is_operating'] as bool? ??
+            true,
+        stops: (json['stops'] as List?)?.cast<String>() ??
+            (json['bus_stops'] as List?)?.cast<String>() ??
+            [],
+        studentCount:
+            json['studentCount'] as int? ?? json['student_count'] as int? ?? 0,
+        createdAt: json['createdAt'] != null
+            ? DateTime.parse(json['createdAt'] as String)
+            : json['created_at'] != null
+                ? DateTime.parse(json['created_at'] as String)
+                : DateTime.now(),
+        updatedAt: json['updatedAt'] != null
+            ? DateTime.parse(json['updatedAt'] as String)
+            : json['updated_at'] != null
+                ? DateTime.parse(json['updated_at'] as String)
+                : DateTime.now(),
       );
 
   Bus copyWith({

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:agni_college_bus_tracker/models/bus.dart';
+import 'package:agni_college_bus_tracker/services/api_service.dart';
 
 class BusService extends ChangeNotifier {
   static const _busesKey = 'buses';
@@ -10,21 +11,40 @@ class BusService extends ChangeNotifier {
   List<Bus> get buses => _buses;
 
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final busesJson = prefs.getString(_busesKey);
+    // Try to fetch from backend first
+    await _fetchFromBackend();
 
-    if (busesJson != null) {
-      try {
-        final List decoded = json.decode(busesJson);
-        _buses = decoded.map((e) => Bus.fromJson(e)).toList();
-      } catch (e) {
-        debugPrint('Error loading buses: $e');
+    // Fallback to local storage if backend fails
+    if (_buses.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final busesJson = prefs.getString(_busesKey);
+
+      if (busesJson != null) {
+        try {
+          final List decoded = json.decode(busesJson);
+          _buses = decoded.map((e) => Bus.fromJson(e)).toList();
+        } catch (e) {
+          debugPrint('Error loading buses: $e');
+          await _loadDefaultBuses();
+        }
+      } else {
         await _loadDefaultBuses();
       }
-    } else {
-      await _loadDefaultBuses();
     }
     notifyListeners();
+  }
+
+  Future<void> _fetchFromBackend() async {
+    try {
+      final data = await ApiService.get('/buses');
+      if (data is List) {
+        _buses =
+            data.map((b) => Bus.fromJson(b as Map<String, dynamic>)).toList();
+        debugPrint('Loaded ${_buses.length} buses from backend');
+      }
+    } catch (e) {
+      debugPrint('Error fetching buses from backend: $e');
+    }
   }
 
   Future<void> _loadDefaultBuses() async {
