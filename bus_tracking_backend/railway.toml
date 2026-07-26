@@ -2,10 +2,14 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2"
+startCommand = "gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --keep-alive 5 --max-requests 10000 --max-requests-jitter 1000"
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 10
 
 [[deploy.volumes]]
 mountPath = "/app/uploads"
 name = "uploads"
+
+[deploy.env]
+MAX_CONCURRENT_USERS = "100000"
+USE_NULL_POOL = "true"
