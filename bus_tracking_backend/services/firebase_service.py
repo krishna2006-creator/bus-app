@@ -31,15 +31,22 @@ class FirebaseService:
     def _init_firebase(self):
         """Initialize Firebase Admin SDK"""
         try:
-            if settings.FIREBASE_CREDENTIALS_PATH:
-                cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-                self._app = firebase_admin.initialize_app(cred)
-                self._db = firestore.client()
-                logger.info("Firebase initialized successfully")
-            else:
+            creds_path = settings.FIREBASE_CREDENTIALS_PATH
+            if not creds_path:
                 logger.warning("FIREBASE_CREDENTIALS_PATH not set. Firebase disabled.")
+                return
+
+            from pathlib import Path
+            if not Path(creds_path).exists():
+                logger.warning("Firebase credentials not found at %s. Firebase disabled.", creds_path)
+                return
+
+            cred = credentials.Certificate(creds_path)
+            self._app = firebase_admin.initialize_app(cred)
+            self._db = firestore.client()
+            logger.info("Firebase initialized successfully")
         except Exception as e:
-            logger.error(f"Firebase initialization failed: {e}")
+            logger.error("Firebase initialization failed: %s", e)
             self._db = None
 
     @staticmethod
