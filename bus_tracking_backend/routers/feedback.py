@@ -10,7 +10,8 @@ from bus_tracking_backend.services.notification_service import notification_serv
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
-@router.get("/")
+@router.get("", include_in_schema=False)
+@router.get("/", include_in_schema=False)
 async def get_all_feedback(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -39,7 +40,8 @@ async def get_all_feedback(
         })
     return result
 
-@router.post("/")
+@router.post("", include_in_schema=False)
+@router.post("/", include_in_schema=False)
 async def submit_feedback(
     data: dict = Body(...),
     db: Session = Depends(get_db),
@@ -75,7 +77,8 @@ async def submit_feedback(
         "message": "Feedback submitted successfully"
     }
 
-@router.post("/{feedback_id}/reply")
+@router.post("/{feedback_id}/reply", include_in_schema=False)
+@router.post("/{feedback_id}/reply/", include_in_schema=False)
 async def reply_to_feedback(
     feedback_id: int,
     data: dict = Body(...),
@@ -94,5 +97,14 @@ async def reply_to_feedback(
     feedback.replied = True
     feedback.replied_at = datetime.utcnow()
     db.commit()
+    
+    # Notify the student about the admin reply
+    await notification_service.send_personal_notification(
+        feedback.user_id,
+        "Feedback Reply Received",
+        f"Admin has replied to your feedback: {feedback.subject}",
+        "feedback_reply",
+        data={"feedback_id": feedback.id, "reply": feedback.reply}
+    )
     
     return {"status": "success", "message": "Reply sent successfully"}

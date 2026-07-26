@@ -17,7 +17,7 @@ class FeedbackService extends ChangeNotifier {
   Future<void> initialize() async {
     // Try to load from backend first
     try {
-      final data = await ApiService.get('/feedback');
+      final data = await ApiService.get('/feedback/');
       if (data is List) {
         _feedbacks = data.map((e) => Feedback.fromJson(e)).toList();
         await _save();
@@ -61,7 +61,7 @@ class FeedbackService extends ChangeNotifier {
 
     // Try to sync to backend
     try {
-      await ApiService.post('/feedback', {
+      await ApiService.post('/feedback/', {
         'subject': subject,
         'message': message,
       });
@@ -92,7 +92,7 @@ class FeedbackService extends ChangeNotifier {
 
     // Try to sync reply to backend
     try {
-      await ApiService.post('/feedback/$feedbackId/reply', {
+      await ApiService.post('/feedback/$feedbackId/reply/', {
         'reply': reply,
       });
     } catch (e) {

@@ -13,6 +13,18 @@ class AdminFeedbackPage extends StatefulWidget {
 
 class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
   @override
+  void initState() {
+    super.initState();
+    // Refresh feedback list when page loads
+    Future.microtask(() async {
+      if (mounted) {
+        final feedbackService = context.read<FeedbackService>();
+        await feedbackService.initialize();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final feedbackService = context.watch<FeedbackService>();
     final feedbacks = feedbackService.feedbacks;

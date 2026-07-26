@@ -5,8 +5,25 @@ import 'package:agni_college_bus_tracker/theme.dart';
 import 'package:agni_college_bus_tracker/models/request.dart';
 import 'package:agni_college_bus_tracker/services/request_service.dart';
 
-class AdminRequestsPage extends StatelessWidget {
+class AdminRequestsPage extends StatefulWidget {
   const AdminRequestsPage({super.key});
+
+  @override
+  State<AdminRequestsPage> createState() => _AdminRequestsPageState();
+}
+
+class _AdminRequestsPageState extends State<AdminRequestsPage> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      if (mounted) {
+        final rs = context.read<RequestService>();
+        await rs.initialize();
+        if (mounted) setState(() {});
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,8 +119,7 @@ class AdminRequestsPage extends StatelessWidget {
                                           Navigator.pop(ctx, false),
                                       child: const Text('Cancel')),
                                   TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, true),
+                                      onPressed: () => Navigator.pop(ctx, true),
                                       child: const Text('Delete')),
                                 ],
                               ),
