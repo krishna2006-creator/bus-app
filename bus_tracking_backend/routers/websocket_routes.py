@@ -34,6 +34,7 @@ async def websocket_location_tracking(
     token: str = Query(None),
     db: Session = Depends(get_db),
 ):
+    """Primary WebSocket endpoint for bus location tracking."""
     """
     WebSocket endpoint for real-time location sharing for a specific bus.
 

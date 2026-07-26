@@ -134,8 +134,8 @@ class _TrackBusPageState extends State<TrackBusPage> {
     try {
       final token = await ApiService.getToken();
       final wsUrl = token != null
-          ? '${AppConfig.wsUrl}/api/ws/ws/location/${widget.bus.id}?token=$token'
-          : '${AppConfig.wsUrl}/api/ws/ws/location/${widget.bus.id}';
+          ? '${AppConfig.wsUrl}/api/ws/location/${widget.bus.id}?token=$token'
+          : '${AppConfig.wsUrl}/api/ws/location/${widget.bus.id}';
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _channel!.stream.listen((message) {

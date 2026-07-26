@@ -178,21 +178,18 @@ class FirebaseService:
     def send_multicast(tokens: List[str], title: str, body: str, data: Dict = None):
         """Send multicast FCM notification using Firebase Admin SDK.
         Uses the service account credentials - NO server key needed.
-        Uses send_each_for_multicast for newer Firebase Admin SDK compatibility."""
+        Uses MulticastMessage for newer Firebase Admin SDK compatibility."""
         if not tokens:
             logger.warning("No tokens provided. Skipping multicast.")
             return
 
         try:
-            messages = [
-                messaging.Message(
-                    notification=messaging.Notification(title=title, body=body),
-                    data=data or {},
-                    token=token,
-                )
-                for token in tokens
-            ]
-            response = messaging.send_each_for_multicast(messages)
+            multicast_message = messaging.MulticastMessage(
+                notification=messaging.Notification(title=title, body=body),
+                data=data or {},
+                tokens=tokens,
+            )
+            response = messaging.send_each_for_multicast(multicast_message)
             logger.info(f"Multicast sent to {response.success_count}/{len(tokens)} devices")
             return response
         except Exception as e:

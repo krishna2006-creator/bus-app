@@ -26,4 +26,13 @@ async def create_request(
         target_role="admin"
     )
     
+    # Notify the student themselves about their request confirmation
+    await notification_service.send_personal_notification(
+        current_user.id,
+        "Request Submitted",
+        f"Your {request.request_type} request has been submitted successfully.",
+        "request_status",
+        data={"request_id": db_request.id, "request_type": request.request_type}
+    )
+    
     return db_request

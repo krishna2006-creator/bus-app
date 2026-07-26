@@ -6,6 +6,7 @@ from datetime import datetime
 from bus_tracking_backend.database.database import get_db
 from bus_tracking_backend.database import models
 from bus_tracking_backend.utils.auth_utils import get_current_user
+from bus_tracking_backend.services.notification_service import notification_service
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -57,6 +58,17 @@ async def submit_feedback(
     db.add(feedback)
     db.commit()
     db.refresh(feedback)
+    
+    # Notify admins about new feedback
+    await notification_service.broadcast_to_role(
+        db,
+        "New Feedback Received",
+        f"{current_user.full_name or 'User'} has submitted feedback: {data.get('subject', '')}",
+        "feedback",
+        target_role="admin",
+        data={"feedback_id": feedback.id, "subject": data.get("subject", "")}
+    )
+    
     return {
         "status": "success",
         "id": feedback.id,

@@ -46,7 +46,7 @@ class _StaffTrackingPageState extends State<StaffTrackingPage> {
     }
 
     final uri = Uri.parse(
-        '${AppConfig.wsUrl}/api/ws/ws/location/${widget.bus.id}?token=$token');
+        '${AppConfig.wsUrl}/api/ws/location/${widget.bus.id}?token=$token');
 
     _locationChannel = WebSocketChannel.connect(uri);
     _locationSubscription = _locationChannel!.stream.listen(

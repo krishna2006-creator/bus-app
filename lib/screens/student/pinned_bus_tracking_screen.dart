@@ -60,7 +60,7 @@ class _PinnedBusTrackingScreenState extends State<PinnedBusTrackingScreen> {
     for (final bus in widget.pinnedBuses) {
       try {
         final wsUrl =
-            '${AppConfig.wsUrl}/api/ws/ws/location/${bus.id}?token=${await ApiService.getToken() ?? ''}';
+            '${AppConfig.wsUrl}/api/ws/location/${bus.id}?token=${await ApiService.getToken() ?? ''}';
         final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
         _wsChannels[bus.id] = channel;
