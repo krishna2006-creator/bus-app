@@ -6,8 +6,6 @@ import 'package:agni_college_bus_tracker/models/bus.dart';
 import 'package:agni_college_bus_tracker/config/app_config.dart';
 import 'dart:math' as math;
 
-/// Bus Tracking Map Widget with Direction, Speed, and Route Markers using FlutterMap
-/// Shows real-time bus location with professional UI
 class BusTrackingMapWidget extends StatefulWidget {
   final Bus bus;
   final BusLocation? currentLocation;
@@ -34,6 +32,7 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
   late MapController mapController;
   final List<Marker> _markers = [];
   final List<LatLng> _routePolyline = [];
+  LatLng? _previousPosition;
 
   @override
   void initState() {
@@ -60,43 +59,73 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
     _markers.clear();
     _routePolyline.clear();
 
-    // Add bus location marker (blue)
+    final currentLatLng = LatLng(location.latitude, location.longitude);
+
+    // Add route polyline with history
+    if (widget.routeHistory.isNotEmpty) {
+      _routePolyline.addAll(
+        widget.routeHistory.map((loc) => LatLng(loc.latitude, loc.longitude)),
+      );
+    }
+
+    // Add animated bus marker
     _markers.add(
       Marker(
-        point: LatLng(location.latitude, location.longitude),
-        child: Icon(
-          Icons.directions_bus,
-          color: Colors.blue,
-          size: 40,
+        point: currentLatLng,
+        width: 60,
+        height: 60,
+        child: Transform.rotate(
+          angle: _previousPosition != null
+              ? _calculateBearing(
+                      _previousPosition!.latitude,
+                      _previousPosition!.longitude,
+                      location.latitude,
+                      location.longitude) *
+                  math.pi /
+                  180
+              : 0,
+          child: Image.asset(
+            'assets/bus_marker.jpg',
+            fit: BoxFit.contain,
+            width: 50,
+            height: 50,
+          ),
         ),
       ),
     );
 
-    // Add boarding point marker if available (green)
+    // Add boarding point marker
     if (widget.boardingPointLocation != null) {
       _markers.add(
         Marker(
           point: widget.boardingPointLocation!,
-          child: const Icon(Icons.location_on, color: Colors.green, size: 40),
+          width: 40,
+          height: 40,
+          child: const Icon(
+            Icons.location_on,
+            color: Colors.green,
+            size: 40,
+          ),
         ),
       );
     }
 
-    // Add college destination marker (red)
+    // Add college destination marker
     _markers.add(
       Marker(
         point:
             const LatLng(AppConfig.collegeLatitude, AppConfig.collegeLongitude),
+        width: 40,
+        height: 40,
         child: const Icon(Icons.school, color: Colors.red, size: 40),
       ),
     );
 
-    // Update camera position
+    _previousPosition = currentLatLng;
+
+    // Smooth camera animation
     try {
-      mapController.move(
-        LatLng(location.latitude, location.longitude),
-        15,
-      );
+      mapController.move(currentLatLng, 15);
     } catch (e) {
       debugPrint('Error moving map: $e');
     }
@@ -104,7 +133,6 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
     setState(() {});
   }
 
-  /// Calculate bearing between two coordinates
   double _calculateBearing(double lat1, double lon1, double lat2, double lon2) {
     final lat1Rad = lat1 * math.pi / 180;
     final lat2Rad = lat2 * math.pi / 180;
@@ -117,10 +145,9 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
-  /// Calculate distance between two coordinates in kilometers
   double _calculateDistance(
       double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     final lat1Rad = lat1 * math.pi / 180;
     final lat2Rad = lat2 * math.pi / 180;
     final dLat = (lat2 - lat1) * math.pi / 180;
@@ -131,9 +158,21 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
             math.cos(lat2Rad) *
             math.sin(dLon / 2) *
             math.sin(dLon / 2);
-    math.sin(dLon / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return R * c;
+  }
+
+  String _calculateETA(BusLocation location) {
+    final distance = _calculateDistance(
+      location.latitude,
+      location.longitude,
+      AppConfig.collegeLatitude,
+      AppConfig.collegeLongitude,
+    );
+    if (location.speed <= 0) return '-- min';
+    final minutes = (distance / location.speed * 60).round();
+    if (minutes < 1) return '<1 min';
+    return '$minutes min';
   }
 
   @override
@@ -156,16 +195,14 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: location == null
-          ? Center(
+          ? const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.location_off, size: 48, color: Colors.grey),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No Location Data',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
+                  SizedBox(height: 12),
+                  Text('No Location Data',
+                      style: TextStyle(color: Colors.grey)),
                 ],
               ),
             )
@@ -181,10 +218,21 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                   children: [
                     TileLayer(
                       urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c'],
                       userAgentPackageName: 'com.busappvictory.app',
                     ),
                     MarkerLayer(markers: _markers),
+                    if (_routePolyline.length > 1)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _routePolyline,
+                            color: Colors.blue.shade400,
+                            strokeWidth: 4,
+                          ),
+                        ],
+                      ),
                     PolylineLayer(
                       polylines: [
                         Polyline(
@@ -193,8 +241,9 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                             const LatLng(AppConfig.collegeLatitude,
                                 AppConfig.collegeLongitude),
                           ],
-                          color: Colors.blue.shade400,
-                          strokeWidth: 2,
+                          color: Colors.red.shade400,
+                          strokeWidth: 3,
+                          dashArray: const [5, 5],
                         ),
                         if (widget.boardingPointLocation != null)
                           Polyline(
@@ -202,33 +251,64 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                               LatLng(location.latitude, location.longitude),
                               widget.boardingPointLocation!,
                             ],
-                            color: Colors.blue.shade400,
-                            strokeWidth: 2,
+                            color: Colors.green.shade400,
+                            strokeWidth: 3,
+                            dashArray: const [5, 5],
                           ),
                       ],
                     ),
                   ],
                 ),
-                // Info overlay at bottom
                 Positioned(
                   bottom: 16,
                   left: 16,
                   right: 16,
                   child: Card(
-                    elevation: 4,
+                    elevation: 6,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Bus ${widget.bus.busNumber}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.directions_bus,
+                                    color: Colors.blue),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Bus ${widget.bus.busNumber}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16),
+                                    ),
+                                    Text(
+                                      widget.bus.route,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -240,18 +320,17 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                                 color: Colors.blue,
                               ),
                               _InfoTile(
-                                label: 'Bearing',
-                                value:
-                                    '${_calculateBearing(location.latitude, location.longitude, AppConfig.collegeLatitude, AppConfig.collegeLongitude).toStringAsFixed(0)}°',
-                                icon: Icons.navigation,
-                                color: Colors.orange,
-                              ),
-                              _InfoTile(
                                 label: 'Distance',
                                 value:
                                     '${_calculateDistance(location.latitude, location.longitude, AppConfig.collegeLatitude, AppConfig.collegeLongitude).toStringAsFixed(1)} km',
                                 icon: Icons.location_on,
                                 color: Colors.red,
+                              ),
+                              _InfoTile(
+                                label: 'ETA',
+                                value: _calculateETA(location),
+                                icon: Icons.access_time,
+                                color: Colors.purple,
                               ),
                             ],
                           ),
@@ -266,7 +345,6 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
   }
 }
 
-/// Information Tile Widget - displays metric with icon and formatted value
 class _InfoTile extends StatelessWidget {
   final String label;
   final String value;
@@ -283,22 +361,21 @@ class _InfoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: color,
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
           ),
+          child: Icon(icon, color: color, size: 18),
         ),
+        const SizedBox(height: 4),
+        Text(label,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+        Text(value,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }
