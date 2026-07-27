@@ -231,22 +231,77 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
 
                   // Live Tracking Map Section
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg,
-                        AppSpacing.lg, AppSpacing.sm),
-                    child: Text(
-                      "Live Tracking",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  Consumer<LocationService>(
+                    builder: (context, locationService, _) {
+                      final hasActiveBuses = context
+                          .watch<BusService>()
+                          .buses
+                          .any((bus) =>
+                              locationService
+                                  .getBestLocationForBus(bus.busNumber) !=
+                              null);
+
+                      if (!hasActiveBuses) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                              AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+                          child: Card(
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.location_off,
+                                      size: 48, color: Colors.grey.shade400),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No Active Tracking',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Bus locations will appear here when drivers start sharing their location.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(AppSpacing.lg,
+                                AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+                            child: Text(
+                              "Live Tracking",
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(
+                            height: 300,
+                            child: DashboardTrackingWidget(),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(
-                    height: 300,
-                    child: DashboardTrackingWidget(),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
 
                   // Quick Actions Section
                   const Padding(

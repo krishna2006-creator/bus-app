@@ -243,7 +243,6 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                           ],
                           color: Colors.red.shade400,
                           strokeWidth: 3,
-                          dashArray: const [5, 5],
                         ),
                         if (widget.boardingPointLocation != null)
                           Polyline(
@@ -253,7 +252,6 @@ class _BusTrackingMapWidgetState extends State<BusTrackingMapWidget> {
                             ],
                             color: Colors.green.shade400,
                             strokeWidth: 3,
-                            dashArray: const [5, 5],
                           ),
                       ],
                     ),
