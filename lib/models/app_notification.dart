@@ -7,6 +7,7 @@ class AppNotification {
   final String? category;
   final DateTime createdAt;
   bool read;
+  final bool soundEnabled;
 
   AppNotification({
     required this.id,
@@ -17,6 +18,7 @@ class AppNotification {
     this.category,
     DateTime? createdAt,
     this.read = false,
+    this.soundEnabled = true,
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -28,6 +30,7 @@ class AppNotification {
         'category': category,
         'createdAt': createdAt.toIso8601String(),
         'read': read,
+        'soundEnabled': soundEnabled,
       };
 
   factory AppNotification.fromJson(Map<String, dynamic> json) =>
@@ -40,5 +43,6 @@ class AppNotification {
         category: json['category'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         read: json['read'] as bool? ?? false,
+        soundEnabled: json['soundEnabled'] as bool? ?? true,
       );
 }

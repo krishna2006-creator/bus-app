@@ -35,7 +35,7 @@ async def get_all_feedback(
             "message": f.message,
             "reply": f.reply,
             "replied": f.replied,
-            "createdAt": f.created_at.isoformat() if f.created_at else None,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
             "repliedAt": f.replied_at.isoformat() if f.replied_at else None,
         })
     return result
@@ -76,6 +76,25 @@ async def submit_feedback(
         "id": feedback.id,
         "message": "Feedback submitted successfully"
     }
+
+@router.delete("/{feedback_id}", include_in_schema=False)
+async def delete_feedback(
+    feedback_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Admin: Delete feedback."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    feedback = db.query(models.Feedback).filter(models.Feedback.id == feedback_id).first()
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    
+    db.delete(feedback)
+    db.commit()
+    
+    return {"status": "success", "message": "Feedback deleted successfully"}
 
 @router.post("/{feedback_id}/reply", include_in_schema=False)
 @router.post("/{feedback_id}/reply/", include_in_schema=False)

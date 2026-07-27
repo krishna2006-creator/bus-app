@@ -32,54 +32,6 @@ class NotificationService extends ChangeNotifier {
 
   List<AppNotification> get notifications => _notifications;
 
-  /// Subscribe to FCM topic for a specific bus (unique topic per bus).
-  /// This ensures notifications are delivered correctly per bus.
-  /// Topic format: bus_{busId}
-  Future<void> subscribeToBusTopic(String busId) async {
-    if (kIsWeb) return;
-    try {
-      final topic = _busTopicName(busId);
-      await FirebaseMessaging.instance.subscribeToTopic(topic);
-      debugPrint('Subscribed to FCM topic: $topic');
-    } catch (e) {
-      debugPrint('Failed to subscribe to bus topic $busId: $e');
-    }
-  }
-
-  /// Unsubscribe from FCM topic for a specific bus.
-  Future<void> unsubscribeFromBusTopic(String busId) async {
-    if (kIsWeb) return;
-    try {
-      final topic = _busTopicName(busId);
-      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
-      debugPrint('Unsubscribed from FCM topic: $topic');
-    } catch (e) {
-      debugPrint('Failed to unsubscribe from bus topic $busId: $e');
-    }
-  }
-
-  /// Subscribe to FCM topics for all pinned buses.
-  Future<void> subscribeToAllPinnedBusTopics(List<String> busIds) async {
-    for (final busId in busIds) {
-      await subscribeToBusTopic(busId);
-    }
-  }
-
-  /// Unsubscribe from FCM topics for buses no longer pinned.
-  Future<void> unsubscribeFromBusTopics(List<String> busIds) async {
-    for (final busId in busIds) {
-      await unsubscribeFromBusTopic(busId);
-    }
-  }
-
-  /// Generate the unique FCM topic name for a bus.
-  static String _busTopicName(String busId) {
-    // Sanitize bus ID to be a valid FCM topic name
-    // FCM topic names must be alphanumeric + underscore
-    final sanitized = busId.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
-    return 'bus_$sanitized';
-  }
-
   Future<void> initialize(String? userId, String? authToken) async {
     try {
       await _initLocalNotifications();
@@ -87,7 +39,6 @@ class NotificationService extends ChangeNotifier {
       debugPrint('Failed to initialize local notifications: $e');
     }
 
-    // Request notification permissions from the OS (required for Android 13+)
     try {
       await requestPermissions();
     } catch (e) {
@@ -121,6 +72,26 @@ class NotificationService extends ChangeNotifier {
 
   Future<void> _initializeFirebaseMessaging() async {
     try {
+      const androidChannel = AndroidNotificationChannel(
+        'bus_tracking_channel',
+        'Bus Tracking Notifications',
+        description: 'Notifications for bus tracking updates and alerts',
+        importance: Importance.high,
+        sound: null,
+      );
+
+      await FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(androidChannel);
+
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -142,7 +113,7 @@ class NotificationService extends ChangeNotifier {
     }
   }
 
-  void _handleForegroundMessage(RemoteMessage message) {
+  void _handleForegroundMessage(RemoteMessage message) async {
     final notification = AppNotification(
       id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
       userId: '',
@@ -150,8 +121,9 @@ class NotificationService extends ChangeNotifier {
       message: message.notification?.body ?? '',
       category: 'firebase',
       createdAt: DateTime.now(),
+      soundEnabled: true,
     );
-    addNotification(notification);
+    await addNotification(notification);
   }
 
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -163,7 +135,6 @@ class NotificationService extends ChangeNotifier {
     if (kIsWeb) return;
     if (_localNotificationsInitialized) return;
 
-    // Use Android default notification icon
     const androidInit = AndroidInitializationSettings('');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -178,25 +149,20 @@ class NotificationService extends ChangeNotifier {
 
     _localNotifications.initialize(
       settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {
-        // No navigation from notification in this repo yet.
-      },
+      onDidReceiveNotificationResponse: (details) {},
     );
 
     _localNotificationsInitialized = true;
   }
 
-  // NEW METHOD: Request Notification Permission
   Future<void> requestPermissions() async {
     if (kIsWeb) return;
 
-    // Request OS permission (iOS/Android 13+)
     var status = await Permission.notification.status;
     if (status.isDenied) {
       await Permission.notification.request();
     }
 
-    // For tracking features, we also need location permission
     var locStatus = await Permission.locationWhenInUse.status;
     if (locStatus.isDenied) {
       await Permission.locationWhenInUse.request();
@@ -208,7 +174,6 @@ class NotificationService extends ChangeNotifier {
   Future<void> _connectNotificationWebSocket(
       String userId, String? authToken) async {
     try {
-      // Use provided token or fetch from SharedPreferences
       final token = authToken ?? await ApiService.getToken();
       if (token == null) {
         debugPrint("No auth token available for WebSocket");
@@ -234,49 +199,10 @@ class NotificationService extends ChangeNotifier {
               message: payload['message'] ?? '',
               category: payload['category'] ?? 'default',
               createdAt: DateTime.now(),
+              soundEnabled: true,
             );
 
             await addNotification(n);
-
-            // Show OS notification with sound/alert (Android/iOS)
-            if (!kIsWeb) {
-              final notifId = int.tryParse(n.id.toString()) ??
-                  (DateTime.now().millisecondsSinceEpoch ~/ 1000);
-
-              await _localNotifications.show(
-                id: notifId,
-                title: n.title,
-                body: n.message,
-                notificationDetails: NotificationDetails(
-                  android: AndroidNotificationDetails(
-                    'bus_alerts',
-                    'Bus Alerts',
-                    channelDescription: 'Bus tracking alerts and updates',
-                    importance: Importance.max,
-                    priority: Priority.high,
-                    playSound: true,
-                    enableVibration: true,
-                    // Show the notification even in DND mode
-                    visibility: NotificationVisibility.public,
-                    icon: '',
-                    // Uses default notification sound from user settings
-                    color: const Color(0xFF1976D2),
-                    channelShowBadge: true,
-                    enableLights: true,
-                    ledColor: const Color(0xFF1976D2),
-                    ledOnMs: 1000,
-                    ledOffMs: 500,
-                  ),
-                  iOS: const DarwinNotificationDetails(
-                    presentAlert: true,
-                    presentSound: true,
-                    presentBadge: true,
-                    sound: 'default.wav',
-                  ),
-                ),
-                payload: json.encode({'category': n.category, 'id': n.id}),
-              );
-            }
           }
         } catch (e) {
           debugPrint("Notification WS Error: $e");
@@ -297,7 +223,6 @@ class NotificationService extends ChangeNotifier {
         () => _connectNotificationWebSocket(userId, token));
   }
 
-  // Call this after successful login to reconnect WebSocket with new token
   Future<void> reconnectAfterLogin(String userId) async {
     try {
       _channel?.sink.close();
@@ -312,13 +237,25 @@ class NotificationService extends ChangeNotifier {
   }
 
   Future<void> addNotification(AppNotification n) async {
+    final now = DateTime.now();
+    final existing = _notifications.firstWhere(
+      (x) =>
+          x.userId == n.userId &&
+          x.title == n.title &&
+          x.message == n.message &&
+          now.difference(x.createdAt).inSeconds < 2,
+      orElse: () => n,
+    );
+
+    if (existing.id != n.id) {
+      debugPrint('Duplicate notification suppressed');
+      return;
+    }
+
     _notifications.insert(0, n);
     await _save();
     notifyListeners();
 
-    // Show a real OS notification with sound for ALL notification types
-    // This covers: announcements, documents, requests, location shares,
-    // pinned bus alerts, stop predictions, and all dashboard notifications
     if (!kIsWeb) {
       try {
         final notifId = int.tryParse(n.id.toString()) ??
@@ -330,10 +267,11 @@ class NotificationService extends ChangeNotifier {
           body: n.message,
           notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
-              'bus_alerts',
-              'Bus Alerts',
-              channelDescription: 'Bus tracking alerts and updates',
-              importance: Importance.max,
+              'bus_tracking_channel',
+              'Bus Tracking Notifications',
+              channelDescription:
+                  'Notifications for bus tracking updates and alerts',
+              importance: Importance.high,
               priority: Priority.high,
               playSound: true,
               enableVibration: true,
@@ -377,8 +315,10 @@ class NotificationService extends ChangeNotifier {
         title: title,
         message: message,
         createdAt: ts,
+        soundEnabled: true,
       );
       _notifications.insert(0, n);
+      await addNotification(n);
     }
     await _save();
     notifyListeners();
@@ -400,11 +340,7 @@ class NotificationService extends ChangeNotifier {
 
   List<AppNotification> forUser(String userId) {
     return _notifications.where((n) {
-      // Primary filter: notifications assigned to this user
       if (n.userId == userId) return true;
-
-      // For admin, show only admin-specific notifications
-      // For non-admin, show only their own notifications
       return false;
     }).toList();
   }
@@ -422,9 +358,9 @@ class NotificationService extends ChangeNotifier {
           message: 'Bus $bus is on the move!',
           busNumber: bus,
           createdAt: ts,
+          soundEnabled: true,
         );
         _notifications.insert(0, n);
-        // Show mobile notification with sound
         await addNotification(n);
       }
     }
@@ -432,7 +368,6 @@ class NotificationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tracking-specific notifications
   Future<void> notifyBusArriving(
       String userId, String busNumber, String pickupPoint) async {
     final notification = AppNotification(
@@ -441,10 +376,12 @@ class NotificationService extends ChangeNotifier {
       title: '🚌 Bus Arriving!',
       message: 'Bus $busNumber is arriving at $pickupPoint',
       createdAt: DateTime.now(),
+      soundEnabled: true,
     );
     _notifications.insert(0, notification);
     await _save();
     notifyListeners();
+    await addNotification(notification);
   }
 
   Future<void> notifyBusArrivedAtCollege(
@@ -455,10 +392,12 @@ class NotificationService extends ChangeNotifier {
       title: '✅ Arrived!',
       message: 'Bus $busNumber has arrived at college',
       createdAt: DateTime.now(),
+      soundEnabled: true,
     );
     _notifications.insert(0, notification);
     await _save();
     notifyListeners();
+    await addNotification(notification);
   }
 
   Future<void> notifyBusLeftBoarding(String userId, String busNumber) async {
@@ -468,10 +407,12 @@ class NotificationService extends ChangeNotifier {
       title: '🚗 Bus Departed',
       message: 'Bus $busNumber has left boarding point, heading to college',
       createdAt: DateTime.now(),
+      soundEnabled: true,
     );
     _notifications.insert(0, notification);
     await _save();
     notifyListeners();
+    await addNotification(notification);
   }
 
   Future<void> notifyDistanceUpdate(String userId, String busNumber,
@@ -483,10 +424,12 @@ class NotificationService extends ChangeNotifier {
       message:
           'Bus $busNumber is ${distanceKm.toStringAsFixed(1)} km away ($minutesETA min)',
       createdAt: DateTime.now(),
+      soundEnabled: true,
     );
     _notifications.insert(0, notification);
     await _save();
     notifyListeners();
+    await addNotification(notification);
   }
 
   Future<void> _save() async {

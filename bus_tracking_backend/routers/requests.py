@@ -70,7 +70,7 @@ async def create_request(
         f"{user_name} has submitted a {data.get('request_type', 'general')} request.",
         "request",
         target_role="admin",
-        data={"request_id": db_request.id, "request_type": data.get("request_type", "")}
+        data={"request_id": db_request.id, "request_type": data.get('request_type', '')}
     )
     
     # Notify the student themselves about their request confirmation
@@ -79,7 +79,7 @@ async def create_request(
         "Request Submitted",
         f"Your {data.get('request_type', 'general')} request has been submitted successfully.",
         "request_status",
-        data={"request_id": db_request.id, "request_type": data.get("request_type", "")}
+        data={"request_id": db_request.id, "request_type": data.get('request_type', '')}
     )
     
     return {
@@ -87,6 +87,25 @@ async def create_request(
         "id": db_request.id,
         "message": "Request submitted successfully"
     }
+
+@router.delete("/{request_id}", include_in_schema=False)
+async def delete_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Admin: Delete request."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    
+    db_request = db.query(models.Request).filter(models.Request.id == request_id).first()
+    if not db_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    
+    db.delete(db_request)
+    db.commit()
+    
+    return {"status": "success", "message": "Request deleted successfully"}
 
 @router.post("/{request_id}/status", include_in_schema=False)
 @router.post("/{request_id}/status/", include_in_schema=False)
@@ -98,11 +117,11 @@ async def update_request_status(
 ):
     """Admin: Update request status."""
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     
     db_request = db.query(models.Request).filter(models.Request.id == request_id).first()
     if not db_request:
-        raise HTTPException(status_code=404, detail="Request not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
     
     new_status = data.get("status", "pending")
     db_request.status = new_status
