@@ -41,8 +41,8 @@ class _StudentShareLocationScreenState
   double _speed = 0;
   String _statusMessage = 'Starting location sharing...';
 
-  /// Auto-refresh timer ensures location updates every 1 second
-  /// even when GPS doesn't report movement
+  /// Auto-refresh timer ensures location updates every 5 seconds
+  /// for efficient location sharing (changed from 1s to 5s)
   Timer? _autoRefreshTimer;
 
   @override
@@ -105,7 +105,7 @@ class _StudentShareLocationScreenState
         _setStatus('Error: $e', isError: true);
       });
 
-      /// Auto-refresh location every 1 second for perfect location sharing
+      /// Auto-refresh location every 5 seconds for efficient location sharing
       _startAutoRefresh();
     } catch (e) {
       debugPrint('Error in _startSharing: $e');
@@ -113,10 +113,10 @@ class _StudentShareLocationScreenState
     }
   }
 
-  /// Auto-refresh location every 1 second for perfect location sharing
+  /// Auto-refresh location every 5 seconds for efficient location sharing
   void _startAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!mounted || !_isSharing) return;
       try {
         final pos = await Geolocator.getCurrentPosition(

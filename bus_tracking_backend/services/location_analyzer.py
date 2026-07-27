@@ -3,6 +3,8 @@ Location Analyzer - Processes location updates and triggers pinned bus notificat
 - Geofence notifications at 2km, 1km, 500m
 - Duplicate prevention per stop and trip
 - Notifies only users who pinned that specific bus
+- Auto-stop sharing when bus reaches college
+- Traffic delay detection and notification
 """
 from sqlalchemy.orm import Session, joinedload
 from ..database import models
@@ -10,12 +12,13 @@ from .websocket_manager_v2 import manager
 from .websocket_manager_v2 import LocationData as WSLocationData
 from .notification_service import notification_service
 from ..utils.geo_utils import calculate_distance_km, estimate_eta_minutes
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
-# Agni College Location
-COLLEGE_LATITUDE = 12.8482
-COLLEGE_LONGITUDE = 80.1943
+# Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
+# Coordinates: 12°50'56"N 80°11'38"E
+COLLEGE_LATITUDE = 12.8489
+COLLEGE_LONGITUDE = 80.1939
 
 
 class LocationAnalyzer:
@@ -27,6 +30,9 @@ class LocationAnalyzer:
         self._tracking_started_notified = set()
         # Track last distance bracket notified per (bus_id, user_id)
         self._last_distance_bracket = {}
+        # Track bus positions for traffic delay detection
+        self._bus_position_history = {}  # {bus_id: [(timestamp, lat, lng), ...]}
+        self._traffic_delay_notified = set()  # Track buses already notified about traffic delay
 
     def _make_geofence_key(self, bus_id: int, stop_id: int, bracket: str) -> str:
         """Create a unique notification key to prevent duplicate geofence alerts."""
@@ -79,6 +85,12 @@ class LocationAnalyzer:
         from .prediction_service import prediction_service
         await prediction_service.update_bus_coord(bus_id, lat, lng)
 
+        # Check if bus reached college - auto-stop sharing
+        await self._check_college_arrival(db, bus_id, lat, lng, role)
+
+        # Check for traffic delay if bus is stuck
+        await self._check_traffic_delay(db, bus_id, lat, lng, speed)
+
         # --- PINNED BUS NOTIFICATIONS ---
 
         # Get bus info
@@ -109,6 +121,112 @@ class LocationAnalyzer:
         await self._update_subscribers(db, bus_id, lat, lng, speed)
 
         return {"status": "broadcasted", "ws_manager_status": ws_response}
+
+    async def _check_college_arrival(self, db: Session, bus_id: int, lat: float, lng: float, role: str):
+        """Check if bus has reached college and auto-stop sharing."""
+        if role != "driver" or not bus_id:
+            return
+
+        distance_to_college = calculate_distance_km(lat, lng, COLLEGE_LATITUDE, COLLEGE_LONGITUDE)
+
+        # If bus is within 50 meters of college, auto-stop sharing
+        if distance_to_college <= 0.05:
+            # Send STOP_SHARING to clear the location
+            stop_signal = {
+                "type": "STOP_SHARING",
+                "payload": {
+                    "bus_id": bus_id,
+                    "role": "driver",
+                    "latitude": 0,
+                    "longitude": 0,
+                    "timestamp": datetime.now().timestamp()
+                },
+                "bus_id": bus_id,
+                "role": "driver",
+                "latitude": 0,
+                "longitude": 0,
+                "timestamp": datetime.now().timestamp()
+            }
+
+            await manager.broadcast_to_bus(bus_id, stop_signal)
+            await self.remove_location(f"driver_{bus_id}", bus_id, "driver")
+
+            # Notify pinned users that trip completed
+            bus = db.query(models.Bus).filter(models.Bus.id == bus_id).first()
+            bus_number = bus.bus_number if bus else str(bus_id)
+            await notification_service.notify_pinned_bus_trip_completed(db, bus_id, bus_number)
+
+            # Clean up tracking state
+            self._tracking_started_notified.discard(bus_id)
+            self._bus_position_history.pop(bus_id, None)
+            self._traffic_delay_notified.discard(bus_id)
+
+            logger.info(f"Auto-stopped sharing for bus {bus_id} - reached college")
+
+    async def _check_traffic_delay(self, db: Session, bus_id: int, lat: float, lng: float, speed: float):
+        """Check if bus is stuck in traffic for >10 minutes and send notification."""
+        if not bus_id or speed > 5.0:  # If moving, no delay
+            return
+
+        current_time = datetime.now()
+
+        # Initialize position history for this bus if not exists
+        if bus_id not in self._bus_position_history:
+            self._bus_position_history[bus_id] = []
+
+        # Add current position to history
+        self._bus_position_history[bus_id].append((current_time, lat, lng))
+
+        # Keep only positions from last 15 minutes
+        cutoff_time = current_time - timedelta(minutes=15)
+        self._bus_position_history[bus_id] = [
+            (ts, la, ln) for ts, la, ln in self._bus_position_history[bus_id]
+            if ts > cutoff_time
+        ]
+
+        # Check if bus has been stuck for >10 minutes
+        if bus_id in self._traffic_delay_notified:
+            return  # Already notified about this delay
+
+        history = self._bus_position_history[bus_id]
+        if len(history) < 10:  # Need at least 10 data points
+            return
+
+        # Check if positions have changed minimally in last 10 minutes
+        ten_minutes_ago = current_time - timedelta(minutes=10)
+        recent_positions = [
+            (ts, la, ln) for ts, la, ln in history
+            if ts > ten_minutes_ago
+        ]
+
+        if len(recent_positions) < 5:
+            return
+
+        # Calculate maximum distance moved in last 10 minutes
+        distances = []
+        for i in range(1, len(recent_positions)):
+            _, lat1, lng1 = recent_positions[i-1]
+            _, lat2, lng2 = recent_positions[i]
+            dist = calculate_distance_km(lat1, lng1, lat2, lng2)
+            distances.append(dist)
+
+        max_distance = max(distances) if distances else 0
+
+        # If bus moved less than 200 meters in 10 minutes, it's stuck in traffic
+        if max_distance < 0.2:
+            bus = db.query(models.Bus).filter(models.Bus.id == bus_id).first()
+            bus_number = bus.bus_number if bus else str(bus_id)
+
+            await notification_service.notify_pinned_users(
+                db, bus_id,
+                title=f"Bus {bus_number} Delayed",
+                message=f"Bus {bus_number} is delayed due to traffic. Please expect a delay in arrival.",
+                category="TRAFFIC_DELAY",
+                data={"bus_id": bus_id, "bus_number": bus_number, "reason": "traffic"}
+            )
+
+            self._traffic_delay_notified.add(bus_id)
+            logger.info(f"Traffic delay notification sent for bus {bus_id}")
 
     async def _check_geofence_and_notify(self, db: Session, bus_id: int, bus_number: str, stop, b_lat: float, b_lng: float):
         """Check if bus is within geofence radii of a stop and notify pinned users."""
@@ -157,6 +275,8 @@ class LocationAnalyzer:
 
             # Clean up tracking state
             self._tracking_started_notified.discard(bus_id)
+            self._bus_position_history.pop(bus_id, None)
+            self._traffic_delay_notified.discard(bus_id)
 
         return await self.remove_location(u_id, bus_id, role)
 
@@ -277,7 +397,7 @@ class LocationAnalyzer:
         prev_dist = getattr(self, f"_prev_dist_{user_id}", dist_to_stop)
         setattr(self, f"_prev_dist_{user_id}", dist_to_stop)
 
-        if phase == "waiting" and (dist_to_stop < 0.25 or (dist_to_stop < 0.5 and dist_to_stop > prev_dist)):
+        if phase == "waiting" and (dist_to_stop < 0.25 or (dist_to_stop > prev_dist and dist_to_stop < 0.5)):
             self.user_trip_phases[user_id] = "on_board"
             phase = "on_board"
 

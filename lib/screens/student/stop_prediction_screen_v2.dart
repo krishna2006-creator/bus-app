@@ -27,7 +27,7 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
   bool _isSearchFocused = false;
 
   final LatLng _initialCenter =
-      const LatLng(12.8446, 80.2146); // College location
+      LatLng(AppConfig.collegeLatitude, AppConfig.collegeLongitude);
   final double _zoomLevel = 14.0;
 
   @override
@@ -628,6 +628,34 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Stop Tracking Button - clears tracking state and stops updates
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await context
+                                    .read<StopPredictionProvider>()
+                                    .stopTracking();
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                              icon: const Icon(Icons.stop_circle,
+                                  color: Colors.red),
+                              label: const Text(
+                                'Stop Tracking',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.red),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
                           ),
                         ],
                       ),

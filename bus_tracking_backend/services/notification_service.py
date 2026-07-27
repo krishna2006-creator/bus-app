@@ -123,6 +123,20 @@ class NotificationService:
                 category,
                 data=data
             )
+
+        # Send FCM topic-based notification for this specific bus.
+        # Each bus has a unique FCM topic (bus_{bus_id}) that users subscribe to
+        # when they pin the bus. This ensures notifications are delivered
+        # correctly per bus, even when the user is offline or not WebSocket-connected.
+        topic = f"bus_{bus_id}"
+        try:
+            firebase_service.send_topic_notification(
+                topic, title, message, data or {}
+            )
+            logger.info(f"FCM topic notification sent to topic '{topic}' for bus {bus_id}")
+        except Exception as exc:
+            logger.warning(f"FCM topic notification failed for bus {bus_id}: {exc}")
+
         logger.info(f"Pinned bus notification '{category}' sent to {len(pinned_records)} users for bus {bus_id}")
         return len(pinned_records)
 

@@ -221,6 +221,17 @@ class LocationService extends ChangeNotifier {
     return _studentLocations[busNumber];
   }
 
+  /// Returns only the location for the bus that is assigned to the user.
+  /// This ensures that when sharing location, only the assigned bus shows,
+  /// not other buses that might be sharing locations simultaneously.
+  BusLocation? getLocationsForAssignedBus(User user) {
+    if (user.assignedBusId == null && user.assignedBusNumber == null) {
+      return null;
+    }
+    final busNumber = user.assignedBusNumber ?? user.assignedBusId.toString();
+    return getBestLocationForBus(busNumber);
+  }
+
   Future<void> refreshBusLocations() async {
     await _loadLocations();
     notifyListeners();

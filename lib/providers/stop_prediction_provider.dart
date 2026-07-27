@@ -156,6 +156,43 @@ class StopPredictionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stop tracking for the current user.
+  /// When a stop location is clicked, this stops location updates for that user
+  /// by clearing the selected stop, stopping polling, and notifying the backend.
+  Future<void> stopTracking() async {
+    _predictionPollTimer?.cancel();
+    _channel?.sink.close();
+    _channel = null;
+    _reconnectTimer?.cancel();
+
+    // Clear all tracking state
+    _selectedStop = null;
+    _previewStop = null;
+    _predictions = [];
+    _prediction = null;
+    _liveBusLocation = null;
+    _searchResults = _allStops;
+    _error = null;
+    _isFollowingBus = true;
+
+    // Notify backend that tracking is stopped
+    try {
+      await ApiService.post('/tracking/stop', {});
+    } catch (e) {
+      debugPrint('Error notifying backend of tracking stop: $e');
+    }
+
+    // Stop live tracking service sessions
+    try {
+      _liveTrackingService?.dispose();
+    } catch (e) {
+      debugPrint('Error stopping live tracking service: $e');
+    }
+
+    notifyListeners();
+    debugPrint('Stop tracking: cleared all tracking state');
+  }
+
   @override
   void dispose() {
     _channel?.sink.close();

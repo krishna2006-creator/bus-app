@@ -8,9 +8,8 @@ import 'package:agni_college_bus_tracker/services/location_service.dart';
 import 'package:agni_college_bus_tracker/services/request_service.dart';
 import 'package:agni_college_bus_tracker/services/trip_service.dart';
 import 'package:agni_college_bus_tracker/widgets/bus_card.dart';
+import 'package:agni_college_bus_tracker/widgets/dashboard_tracking_widget.dart';
 import 'package:agni_college_bus_tracker/widgets/pop_scope.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -20,7 +19,6 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  final MapController _mapController = MapController();
   final TextEditingController _busSearchController = TextEditingController();
   bool _showBusList = false;
   String _busSearchQuery = '';
@@ -122,318 +120,283 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final tripService = context.watch<TripService>();
 
     try {
-      final markers = locService.allLocations.values.map((l) {
-        final pos = LatLng(l.latitude, l.longitude);
-
-        return Marker(
-          width: 80,
-          height: 80,
-          point: pos,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black26, blurRadius: 4)
-                  ],
-                ),
-                child: Text(
-                  'B${l.busNumber}\n${l.speed.toStringAsFixed(1)}km/h',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black),
-                ),
-              ),
-              Icon(
-                Icons.directions_bus,
-                color:
-                    l.isSharedByStudent ? Colors.orange : AppColors.adminBlue,
-                size: 34,
-              ),
-            ],
-          ),
-        );
-      }).toList();
-
-      LatLng initialCenter;
-      if (locService.allLocations.isEmpty) {
-        initialCenter = const LatLng(12.8446, 80.2146);
-      } else {
-        final firstLoc = locService.allLocations.values.first;
-        initialCenter = LatLng(firstLoc.latitude, firstLoc.longitude);
-      }
-
       return AppPopScope(
         canPop: false,
         child: Scaffold(
           body: SafeArea(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.adminBlue,
-                        AppColors.adminBlue.withAlpha(204),
-                      ],
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Header Section
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.adminBlue,
+                          AppColors.adminBlue.withAlpha(204),
+                        ],
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(AppRadius.md),
-                            ),
-                            child: Icon(Icons.admin_panel_settings,
-                                color: AppColors.white, size: 28),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Admin Dashboard',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(
-                                        color: AppColors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                Text(
-                                  'Welcome, ${authService.currentUser?.name ?? "Admin"}',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: AppColors.white.withAlpha(230),
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.settings, color: AppColors.white),
-                            onPressed: () => _showDashboardSettings(context),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.refresh, color: AppColors.white),
-                            onPressed: () async {
-                              final busService = context.read<BusService>();
-                              final locationService =
-                                  context.read<LocationService>();
-                              final tripService = context.read<TripService>();
-                              await busService.initialize();
-                              await locationService.initialize();
-                              await tripService.initialize();
-                              if (mounted) setState(() {});
-                            },
-                            tooltip: 'Refresh data',
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.logout, color: AppColors.white),
-                            onPressed: () => _handleLogout(context),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      Row(
-                        children: [
-                          _StatCard(
-                            icon: Icons.directions_bus,
-                            count: busService.buses.length.toString(),
-                            label: 'Total Buses',
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          _StatCard(
-                            icon: Icons.pending_actions,
-                            count: requestService.pendingRequests.length
-                                .toString(),
-                            label: 'Requests',
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          _StatCard(
-                            icon: Icons.trip_origin,
-                            count: tripService.activeTrips.length.toString(),
-                            label: 'Active Trips',
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Stack(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        FlutterMap(
-                          mapController: _mapController,
-                          options: MapOptions(
-                            initialCenter: initialCenter,
-                            initialZoom: 13,
-                          ),
+                        Row(
                           children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.busappvictory.app',
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.md),
+                              ),
+                              child: Icon(Icons.admin_panel_settings,
+                                  color: AppColors.white, size: 28),
                             ),
-                            MarkerLayer(markers: markers),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Admin Dashboard',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          color: AppColors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  Text(
+                                    'Welcome, ${authService.currentUser?.name ?? "Admin"}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: AppColors.white.withAlpha(230),
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon:
+                                  Icon(Icons.settings, color: AppColors.white),
+                              onPressed: () => _showDashboardSettings(context),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.refresh, color: AppColors.white),
+                              onPressed: () async {
+                                final busService = context.read<BusService>();
+                                final locationService =
+                                    context.read<LocationService>();
+                                final tripService = context.read<TripService>();
+                                await busService.initialize();
+                                await locationService.initialize();
+                                await tripService.initialize();
+                                if (mounted) setState(() {});
+                              },
+                              tooltip: 'Refresh data',
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.logout, color: AppColors.white),
+                              onPressed: () => _handleLogout(context),
+                            ),
                           ],
                         ),
-                        Positioned(
-                          top: 10,
-                          right: 10,
-                          child: Column(
-                            children: [
-                              FloatingActionButton.small(
-                                heroTag: 'refresh_btn',
-                                onPressed: () async {
-                                  await context
-                                      .read<LocationService>()
-                                      .initialize();
-                                  setState(() {});
-                                },
-                                backgroundColor: AppColors.white,
-                                child: const Icon(Icons.refresh,
-                                    color: AppColors.adminBlue),
-                              ),
-                              const SizedBox(height: 8),
-                              FloatingActionButton.small(
-                                heroTag: 'info_btn',
-                                onPressed: () => setState(
-                                    () => _showBusList = !_showBusList),
-                                backgroundColor: AppColors.white,
-                                child: Icon(Icons.info_outline,
-                                    color: AppColors.adminBlue),
-                              ),
-                            ],
-                          ),
+                        const SizedBox(height: AppSpacing.lg),
+                        Row(
+                          children: [
+                            _StatCard(
+                              icon: Icons.directions_bus,
+                              count: busService.buses.length.toString(),
+                              label: 'Total Buses',
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            _StatCard(
+                              icon: Icons.pending_actions,
+                              count: requestService.pendingRequests.length
+                                  .toString(),
+                              label: 'Requests',
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            _StatCard(
+                              icon: Icons.trip_origin,
+                              count: tripService.activeTrips.length.toString(),
+                              label: 'Active Trips',
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.add_circle,
-                          label: 'Add Bus',
-                          color: AppColors.adminBlue,
-                          onTap: () => context.push('/admin/add-bus'),
-                        ),
+
+                  // Live Tracking Map Section
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg,
+                        AppSpacing.lg, AppSpacing.sm),
+                    child: Text(
+                      "Live Tracking",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.announcement,
-                          label: 'Announcements',
-                          color: AppColors.info,
-                          onTap: () => context.push('/admin/announcements'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.inbox,
-                          label: 'Requests',
-                          color: AppColors.warning,
-                          onTap: () => context.push('/admin/requests'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.upload_file,
-                          label: 'Documents',
-                          color: AppColors.studentGreen,
-                          onTap: () => context.push('/admin/documents'),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.group,
-                          label: 'Manage Drivers',
-                          color: AppColors.adminBlue,
-                          onTap: () => context.push('/admin/drivers'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.notifications,
-                          label: 'Notifications',
-                          color: AppColors.info,
-                          onTap: () => context.push('/notifications'),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.feedback,
-                          label: 'Feedbacks',
-                          color: AppColors.warning,
-                          onTap: () => context.push('/admin/feedback'),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(
+                    height: 300,
+                    child: DashboardTrackingWidget(),
                   ),
-                ),
-                if (_showBusList)
+                  const SizedBox(height: AppSpacing.md),
+
+                  // Quick Actions Section
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    child: Text(
+                      "Quick Actions",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                    child: TextField(
-                      controller: _busSearchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search buses by number or route',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.add_circle,
+                            label: 'Add Bus',
+                            color: AppColors.adminBlue,
+                            onTap: () => context.push('/admin/add-bus'),
+                          ),
                         ),
-                        suffixIcon: _busSearchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _busSearchController.clear();
-                                  setState(() => _busSearchQuery = '');
-                                },
-                              )
-                            : null,
-                      ),
-                      onChanged: (value) =>
-                          setState(() => _busSearchQuery = value),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.announcement,
+                            label: 'Announcements',
+                            color: AppColors.info,
+                            onTap: () => context.push('/admin/announcements'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.inbox,
+                            label: 'Requests',
+                            color: AppColors.warning,
+                            onTap: () => context.push('/admin/requests'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.upload_file,
+                            label: 'Documents',
+                            color: AppColors.studentGreen,
+                            onTap: () => context.push('/admin/documents'),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                if (_showBusList)
-                  Expanded(
-                    child: ListView.builder(
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.group,
+                            label: 'Manage Drivers',
+                            color: AppColors.adminBlue,
+                            onTap: () => context.push('/admin/drivers'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.notifications,
+                            label: 'Notifications',
+                            color: AppColors.info,
+                            onTap: () => context.push('/notifications'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.feedback,
+                            label: 'Feedbacks',
+                            color: AppColors.warning,
+                            onTap: () => context.push('/admin/feedback'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Bus List Section
+                  const SizedBox(height: AppSpacing.md),
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    child: Row(
+                      children: [
+                        const Text(
+                          "Buses",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          icon: Icon(
+                            _showBusList
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                          ),
+                          label: Text(_showBusList ? 'Hide' : 'Show All'),
+                          onPressed: () =>
+                              setState(() => _showBusList = !_showBusList),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_showBusList)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                      child: TextField(
+                        controller: _busSearchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search buses by number or route',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                          ),
+                          suffixIcon: _busSearchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _busSearchController.clear();
+                                    setState(() => _busSearchQuery = '');
+                                  },
+                                )
+                              : null,
+                        ),
+                        onChanged: (value) =>
+                            setState(() => _busSearchQuery = value),
+                      ),
+                    ),
+                  if (_showBusList)
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
                       padding:
                           const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                       itemCount: busService.buses.where((bus) {
@@ -462,8 +425,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         );
                       },
                     ),
-                  ),
-              ],
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ),
             ),
           ),
         ),

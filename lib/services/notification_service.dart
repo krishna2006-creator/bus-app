@@ -32,6 +32,54 @@ class NotificationService extends ChangeNotifier {
 
   List<AppNotification> get notifications => _notifications;
 
+  /// Subscribe to FCM topic for a specific bus (unique topic per bus).
+  /// This ensures notifications are delivered correctly per bus.
+  /// Topic format: bus_{busId}
+  Future<void> subscribeToBusTopic(String busId) async {
+    if (kIsWeb) return;
+    try {
+      final topic = _busTopicName(busId);
+      await FirebaseMessaging.instance.subscribeToTopic(topic);
+      debugPrint('Subscribed to FCM topic: $topic');
+    } catch (e) {
+      debugPrint('Failed to subscribe to bus topic $busId: $e');
+    }
+  }
+
+  /// Unsubscribe from FCM topic for a specific bus.
+  Future<void> unsubscribeFromBusTopic(String busId) async {
+    if (kIsWeb) return;
+    try {
+      final topic = _busTopicName(busId);
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+      debugPrint('Unsubscribed from FCM topic: $topic');
+    } catch (e) {
+      debugPrint('Failed to unsubscribe from bus topic $busId: $e');
+    }
+  }
+
+  /// Subscribe to FCM topics for all pinned buses.
+  Future<void> subscribeToAllPinnedBusTopics(List<String> busIds) async {
+    for (final busId in busIds) {
+      await subscribeToBusTopic(busId);
+    }
+  }
+
+  /// Unsubscribe from FCM topics for buses no longer pinned.
+  Future<void> unsubscribeFromBusTopics(List<String> busIds) async {
+    for (final busId in busIds) {
+      await unsubscribeFromBusTopic(busId);
+    }
+  }
+
+  /// Generate the unique FCM topic name for a bus.
+  static String _busTopicName(String busId) {
+    // Sanitize bus ID to be a valid FCM topic name
+    // FCM topic names must be alphanumeric + underscore
+    final sanitized = busId.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+    return 'bus_$sanitized';
+  }
+
   Future<void> initialize(String? userId, String? authToken) async {
     try {
       await _initLocalNotifications();
