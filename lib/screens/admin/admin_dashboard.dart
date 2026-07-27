@@ -115,7 +115,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       return const Center(child: CircularProgressIndicator());
     }
     final busService = context.watch<BusService>();
-    final locService = context.watch<LocationService>();
     final requestService = context.watch<RequestService>();
     final tripService = context.watch<TripService>();
 
