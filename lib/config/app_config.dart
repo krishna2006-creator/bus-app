@@ -14,8 +14,8 @@ class AppConfig {
       return override;
     }
 
-    // Production backend URL (Railway)
-    const productionUrl = 'bus-app-production-7340.up.railway.app';
+    // Production backend URL (Render)
+    const productionUrl = 'bus-app-7ito.onrender.com';
 
     // For web builds, use production URL
     // For mobile builds, use the override or fallback
