@@ -1,21 +1,17 @@
 import os
 import sys
 
-# Ensure the package is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bus_tracking_backend.database.database import engine, SessionLocal
 from bus_tracking_backend.database import models
 from bus_tracking_backend.utils.auth_utils import get_password_hash
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
-# Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
-# Coordinates: 12°50'56"N 80°11'38"E
 COLLEGE_LATITUDE = 12.8489
 COLLEGE_LONGITUDE = 80.1939
 
 def get_stop_coordinates(stop_name):
-    """Get approximate coordinates for common stops"""
     coordinates = {
         "Thiruvanmiyur": (12.9896, 80.2744),
         "Adyar": (13.0056, 80.2644),
@@ -84,82 +80,50 @@ def get_stop_coordinates(stop_name):
     return coordinates.get(stop_name, (COLLEGE_LATITUDE, COLLEGE_LONGITUDE))
 
 def _migrate_columns():
-    """Add new columns to existing tables if they don't exist.
-    Must work from first load - handles both fresh and existing databases."""
     inspector = inspect(engine)
-
-    # Migrate users table
     if 'users' in inspector.get_table_names():
         columns = {col['name'] for col in inspector.get_columns('users')}
         if 'bus_room_id' not in columns:
             with engine.connect() as conn:
-                conn.execute("ALTER TABLE users ADD COLUMN bus_room_id INTEGER")
+                conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
                 conn.commit()
             print("Added bus_room_id column to users table")
-
-    # Migrate buses table
     if 'buses' in inspector.get_table_names():
         columns = {col['name'] for col in inspector.get_columns('buses')}
         if 'location_sharing_active' not in columns:
             with engine.connect() as conn:
-                conn.execute("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE")
+                conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
                 conn.commit()
             print("Added location_sharing_active column to buses table")
 
 def reinitialize_database():
-    # Create all tables (works with both SQLite and PostgreSQL)
     models.Base.metadata.create_all(bind=engine)
-
-    # Check if we need to add new columns to existing tables
     inspector = inspect(engine)
     columns = {col['name'] for col in inspector.get_columns('users')}
     if 'bus_room_id' not in columns:
         with engine.connect() as conn:
-            conn.execute("ALTER TABLE users ADD COLUMN bus_room_id INTEGER")
+            conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
             conn.commit()
-
     columns = {col['name'] for col in inspector.get_columns('buses')}
     if 'is_active' not in columns:
         with engine.connect() as conn:
-            conn.execute("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
+            conn.execute(text("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
             conn.commit()
     if 'location_sharing_active' not in columns:
         with engine.connect() as conn:
-            conn.execute("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE")
+            conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
             conn.commit()
-
     db = SessionLocal()
     try:
         print("Seeding all user roles...")
         users = [
-            models.User(
-                id="admin001", email="admin@gmail.com", full_name="Admin User",
-                hashed_password=get_password_hash("admin@123"), role="admin"
-            ),
-            models.User(
-                id="stu001", email="student@gmail.com", full_name="Student User",
-                hashed_password=get_password_hash("stu@123"), role="student",
-                bus_room_id=1  # Student login mapped to bus room ID
-            ),
-            models.User(
-                id="staff001", email="staff@gmail.com", full_name="Staff User",
-                hashed_password=get_password_hash("staff@123"), role="staff"
-            ),
-            models.User(
-                id="driver001", email="driver001@gmail.com", full_name="Driver One",
-                hashed_password=get_password_hash("driver@123"), role="driver",
-                phone="9940140579"
-            ),
-            models.User(
-                id="driver002", email="driver002@gmail.com", full_name="Driver Two",
-                hashed_password=get_password_hash("driver@123"), role="driver",
-                phone="8098587815"
-            ),
+            models.User(id="admin001", email="admin@gmail.com", full_name="Admin User", hashed_password=get_password_hash("admin@123"), role="admin"),
+            models.User(id="stu001", email="student@gmail.com", full_name="Student User", hashed_password=get_password_hash("stu@123"), role="student", bus_room_id=1),
+            models.User(id="staff001", email="staff@gmail.com", full_name="Staff User", hashed_password=get_password_hash("staff@123"), role="staff"),
+            models.User(id="driver001", email="driver001@gmail.com", full_name="Driver One", hashed_password=get_password_hash("driver@123"), role="driver", phone="9940140579"),
+            models.User(id="driver002", email="driver002@gmail.com", full_name="Driver Two", hashed_password=get_password_hash("driver@123"), role="driver", phone="8098587815"),
         ]
         db.add_all(users)
-
-        # Seed 32 Buses with proper stops - supports dynamic bus count
-        # The system auto-scales: if buses increase beyond 32, rooms and tracking auto-scale
         print("Seeding buses with stops...")
         bus_data = [
             (1, "Airport Road", ["Airport Road", "Meenambakkam", "Agni College of Technology"]),
@@ -195,46 +159,21 @@ def reinitialize_database():
             (31, "Pondicherry", ["Pondicherry", "Karaikal", "Agni College of Technology"]),
             (32, "Puducherry", ["Puducherry", "Yanam", "Agni College of Technology"]),
         ]
-
         for bus_id, route_name, stop_names in bus_data:
-            new_bus = models.Bus(
-                bus_number=str(bus_id),
-                route_name=route_name,
-                capacity=50,
-                status="active",
-                location_sharing_active=False
-            )
-            db.add(new_bus)
+            bus = models.Bus(bus_number=str(bus_id), route_name=route_name, capacity=50, status="active", location_sharing_active=False)
+            db.add(bus)
             db.flush()
-
-            # Add sample stops
-            stops = []
             for order, stop_name in enumerate(stop_names, 1):
                 lat, lng = get_stop_coordinates(stop_name)
-                stops.append(
-                    models.BusStop(
-                        bus_id=new_bus.id,
-                        stop_name=stop_name,
-                        latitude=lat,
-                        longitude=lng,
-                        stop_order=order
-                    )
-                )
-            db.add_all(stops)
-
-        # Assign drivers to buses
+                db.add(models.BusStop(bus_id=bus.id, stop_name=stop_name, latitude=lat, longitude=lng, stop_order=order))
         bus1 = db.query(models.Bus).filter(models.Bus.id == 1).first()
         bus1.driver_id = "driver001"
         bus1.driver_phone = "9940140579"
         bus2 = db.query(models.Bus).filter(models.Bus.id == 2).first()
         bus2.driver_id = "driver002"
         bus2.driver_phone = "8098587815"
-
-        # Create notification settings for all users
         for user in users:
-            settings = models.NotificationSetting(user_id=user.id)
-            db.add(settings)
-
+            db.add(models.NotificationSetting(user_id=user.id))
         db.commit()
         print("Database initialized successfully with all roles!")
     except Exception as e:
@@ -244,25 +183,16 @@ def reinitialize_database():
         db.close()
 
 def init_database():
-    """Initialize database tables and seed data if not already present.
-    Must work from first load - creates tables and seeds consistently.
-    Handles both fresh databases and existing databases with missing columns."""
-    # Create all tables
     models.Base.metadata.create_all(bind=engine)
-
-    # Run column migrations for existing databases (adds bus_room_id, location_sharing_active)
     _migrate_columns()
-
     db = SessionLocal()
     try:
-        # Check if data already exists
         user_count = db.query(models.User).count()
         if user_count == 0:
             print("Database empty. Seeding initial data...")
             reinitialize_database()
         else:
             print(f"Database already has {user_count} users. Skipping seed.")
-            # Ensure tables are up to date with new columns
             models.Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"Database initialization error: {e}")
