@@ -120,6 +120,12 @@ class NotificationResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# API router used across the endpoints below. Must be created before any
+# route decorators reference it, and is included on the app once defined.
+# ---------------------------------------------------------------------------
+api_router = APIRouter(prefix="/api")
+
+# ---------------------------------------------------------------------------
 # FCM push notification endpoint (HTTP v1 via Firebase Admin SDK)
 # ---------------------------------------------------------------------------
 @api_router.post("/send-notification", response_model=NotificationResponse)
@@ -245,8 +251,6 @@ app.add_middleware(
 os.makedirs("uploads", exist_ok=True)
 from fastapi.staticfiles import StaticFiles
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-
-api_router = APIRouter(prefix="/api")
 
 
 @api_router.post("/public-location")
