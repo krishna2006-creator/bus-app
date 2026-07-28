@@ -1,6 +1,7 @@
 """
 Firebase Integration Service
 Handles Firestore documents, announcements, and FCM push notifications
+Fixed: All FCM notifications now include sound for delivery to admin, staff, and students
 """
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
@@ -31,6 +32,15 @@ class FirebaseService:
     def _init_firebase(self):
         """Initialize Firebase Admin SDK"""
         try:
+            # Check if Firebase app is already initialized (e.g., by main.py)
+            try:
+                self._app = firebase_admin.get_app()
+                self._db = firestore.client()
+                logger.info("Firebase app already initialized. Reusing existing app.")
+                return
+            except ValueError:
+                pass  # App not yet initialized – proceed with initialization
+
             creds_path = settings.FIREBASE_CREDENTIALS_PATH
             if not creds_path:
                 logger.warning("FIREBASE_CREDENTIALS_PATH not set. Firebase disabled.")
@@ -175,38 +185,96 @@ class FirebaseService:
             return False
 
     @staticmethod
-    def send_multicast(tokens: List[str], title: str, body: str, data: Dict = None):
+    def send_multicast(tokens: List[str], title: str, body: str, data: Dict = None, sound: str = "default"):
         """Send multicast FCM notification using Firebase Admin SDK.
         Uses the service account credentials - NO server key needed.
-        Uses MulticastMessage for newer Firebase Admin SDK compatibility."""
+        Uses MulticastMessage for newer Firebase Admin SDK compatibility.
+        Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
         if not tokens:
             logger.warning("No tokens provided. Skipping multicast.")
             return
 
         try:
+            # Build notification with sound for all platforms
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                sound=sound,  # Ensures notification plays sound on delivery
+            )
+            
+            # Android config with sound
+            android_config = messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(
+                    sound=sound,  # Sound for Android
+                    click_action="FLUTTER_NOTIFICATION_CLICK",
+                ),
+            )
+            
+            # APNS config with sound for iOS
+            apns_config = messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound=sound,  # Sound for iOS
+                        content_available=True,
+                    ),
+                ),
+            )
+            
             multicast_message = messaging.MulticastMessage(
-                notification=messaging.Notification(title=title, body=body),
+                notification=notification,
                 data=data or {},
                 tokens=tokens,
+                android=android_config,
+                apns=apns_config,
             )
             response = messaging.send_each_for_multicast(multicast_message)
-            logger.info(f"Multicast sent to {response.success_count}/{len(tokens)} devices")
+            logger.info(f"Multicast sent to {response.success_count}/{len(tokens)} devices with sound")
             return response
         except Exception as e:
             logger.error(f"Multicast FCM failed: {e}")
             return None
 
     @staticmethod
-    def send_topic_notification(topic: str, title: str, body: str, data: Dict = None):
-        """Send topic-based FCM notification"""
+    def send_topic_notification(topic: str, title: str, body: str, data: Dict = None, sound: str = "default"):
+        """Send topic-based FCM notification
+        Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
         try:
+            # Build notification with sound
+            notification = messaging.Notification(
+                title=title,
+                body=body,
+                sound=sound,  # Ensures notification plays sound on delivery
+            )
+            
+            # Android config with sound
+            android_config = messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(
+                    sound=sound,  # Sound for Android
+                    click_action="FLUTTER_NOTIFICATION_CLICK",
+                ),
+            )
+            
+            # APNS config with sound for iOS
+            apns_config = messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound=sound,  # Sound for iOS
+                        content_available=True,
+                    ),
+                ),
+            )
+            
             message = messaging.Message(
-                notification=messaging.Notification(title=title, body=body),
+                notification=notification,
                 data=data or {},
                 topic=topic,
+                android=android_config,
+                apns=apns_config,
             )
             response = messaging.send(message)
-            logger.info(f"Topic notification sent to topic '{topic}': {response}")
+            logger.info(f"Topic notification sent to topic '{topic}' with sound: {response}")
             return response
         except Exception as e:
             logger.error(f"Topic FCM failed: {e}")

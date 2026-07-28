@@ -72,6 +72,7 @@ Desktop.ini
 
 # Secrets
 serviceAccountKey.json
+firebase-key.json
 *.pem
 *.key
 

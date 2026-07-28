@@ -10,9 +10,16 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, stat
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 import json
 import asyncio
 import os
+import logging
+
+# Firebase Admin SDK for FCM push notifications (HTTP v1)
+import firebase_admin
+from firebase_admin import credentials, messaging
 
 from bus_tracking_backend.database.database import engine, Base, SessionLocal, get_db
 from bus_tracking_backend.database import models, crud
@@ -23,8 +30,171 @@ from bus_tracking_backend.utils.auth_utils import get_current_user
 from bus_tracking_backend.config import settings
 from bus_tracking_backend.routers import bus, students, announcements, requests, documents, drivers, stops, tracking, device_tokens, feedback, websocket_routes
 from bus_tracking_backend.services import auth as auth_service
+from bus_tracking_backend.init_db import init_database
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Firebase Admin SDK initialization for FCM push notifications (HTTP v1)
+# Loads the service account JSON and initializes the Firebase app once.
+# ---------------------------------------------------------------------------
+def _init_firebase():
+    """Initialize Firebase Admin SDK with the service account credentials."""
+    try:
+        # Check if Firebase app is already initialized (e.g., by firebase_service)
+        firebase_admin.get_app()
+        logger.info("Firebase app already initialized.")
+        return
+    except ValueError:
+        # App not yet initialized – proceed with initialization
+        pass
+
+    creds_path = settings.FIREBASE_CREDENTIALS_PATH
+    cred = None
+
+    # Try loading from file first
+    if creds_path and Path(creds_path).exists():
+        try:
+            cred = credentials.Certificate(creds_path)
+            logger.info("Firebase credentials loaded from file: %s", creds_path)
+        except Exception as exc:
+            logger.error("Failed to load Firebase credentials from file: %s", exc)
+
+    # Fall back to base64-encoded environment variable (for Railway deployment)
+    if cred is None:
+        import base64
+        creds_b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
+        if creds_b64:
+            try:
+                creds_json = json.loads(base64.b64decode(creds_b64))
+                cred = credentials.Certificate(creds_json)
+                logger.info("Firebase credentials loaded from FIREBASE_CREDENTIALS_BASE64 env var.")
+            except Exception as exc:
+                logger.error("Failed to load Firebase credentials from base64: %s", exc)
+
+    if cred is None:
+        logger.warning(
+            "Firebase credentials not found. "
+            "FCM notifications will be disabled. "
+            "Set FIREBASE_CREDENTIALS_PATH or FIREBASE_CREDENTIALS_BASE64."
+        )
+        return
+
+    try:
+        firebase_admin.initialize_app(cred)
+        logger.info("Firebase Admin SDK initialized successfully for FCM.")
+    except Exception as exc:
+        logger.error("Failed to initialize Firebase Admin SDK: %s", exc)
+
+
+_init_firebase()
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models for the /send-notification endpoint
+# ---------------------------------------------------------------------------
+class NotificationRequest(BaseModel):
+    """Request body for sending an FCM push notification to a single device."""
+    token: str = Field(..., description="FCM registration token of the target device")
+    title: str = Field(..., min_length=1, max_length=200, description="Notification title")
+    body: str = Field(..., min_length=1, max_length=2000, description="Notification body text")
+    data: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional custom key-value pairs sent as data payload"
+    )
+    priority: str = Field(
+        default="high",
+        description="Message priority: 'high' or 'normal'"
+    )
+    sound: str = Field(
+        default="default",
+        description="Notification sound (e.g., 'default')"
+    )
+
+
+class NotificationResponse(BaseModel):
+    """Response returned after attempting to send a notification."""
+    success: bool
+    message_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# FCM push notification endpoint (HTTP v1 via Firebase Admin SDK)
+# ---------------------------------------------------------------------------
+@api_router.post("/send-notification", response_model=NotificationResponse)
+async def send_notification(payload: NotificationRequest):
+    """
+    Send an FCM push notification (HTTP v1) to a specific Android device.
+
+    Uses the Firebase Admin SDK with the service account JSON
+    (firebase-key.json / serviceAccountKey.json) to authenticate.
+
+    - **token**: FCM registration token of the target device
+    - **title**: Notification title
+    - **body**: Notification body text
+    - **data**: Optional custom key-value pairs
+    - **priority**: 'high' or 'normal'
+    - **sound**: Notification sound (default: 'default')
+    """
+    try:
+        # Build the FCM message using the Admin SDK (HTTP v1 API)
+        message = messaging.Message(
+            token=payload.token,
+            notification=messaging.Notification(
+                title=payload.title,
+                body=payload.body,
+                sound=payload.sound,
+            ),
+            data=payload.data or {},
+            android=messaging.AndroidConfig(
+                priority=payload.priority,
+                notification=messaging.AndroidNotification(
+                    sound=payload.sound,
+                    click_action="FLUTTER_NOTIFICATION_CLICK",
+                ),
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound=payload.sound,
+                        content_available=True,
+                    ),
+                ),
+            ),
+        )
+
+        # Send the message – this calls the FCM HTTP v1 API under the hood
+        message_id = messaging.send(message)
+
+        logger.info(
+            "FCM notification sent to token ending with ...%s (message_id: %s)",
+            payload.token[-8:], message_id
+        )
+
+        return NotificationResponse(
+            success=True,
+            message_id=message_id,
+        )
+
+    except firebase_admin.exceptions.FirebaseError as exc:
+        logger.error("FCM send failed (FirebaseError): %s", exc)
+        return NotificationResponse(
+            success=False,
+            error=f"Firebase error: {exc}",
+        )
+    except Exception as exc:
+        logger.error("FCM send failed (unexpected): %s", exc)
+        return NotificationResponse(
+            success=False,
+            error=f"Unexpected error: {exc}",
+        )
+
+
+# Database: must initialize and work from first load, storing bus, student, driver, and location data consistently
+# This ensures tables are created and seed data is populated on startup
 Base.metadata.create_all(bind=engine)
+init_database()
 
 app = FastAPI(title="Agni Bus Tracking API")
 
@@ -111,13 +281,50 @@ async def sync_tracking_data(data: dict = Body(...), db: Session = Depends(get_d
 
 @api_router.get("/admin/buses")
 async def admin_get_all_buses(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Admin dashboard: fix bug where only 1st bus shows correctly, remaining 31 buses show wrong location.
+    All buses must display live location properly.
+    Fixed: now retrieves location from WebSocket manager, LiveLocation table, and location_analyzer cache."""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     buses = db.query(models.Bus).all()
     result = []
     for bus in buses:
+        # Try WebSocket manager first (real-time)
         bus_info = websocket_manager.get_bus_info(bus.id)
         last_loc = bus_info.get("last_known_location") if bus_info else None
+        
+        # If no WebSocket location, try LiveLocation table (persisted)
+        if not last_loc:
+            live_loc = db.query(models.LiveLocation).filter(
+                models.LiveLocation.entity_id == str(bus.id),
+                models.LiveLocation.entity_type == "bus"
+            ).order_by(models.LiveLocation.timestamp.desc()).first()
+            if live_loc:
+                last_loc = {
+                    "latitude": live_loc.latitude,
+                    "longitude": live_loc.longitude,
+                    "speed": live_loc.speed,
+                    "direction": live_loc.bearing,
+                    "timestamp": live_loc.timestamp.isoformat() if live_loc.timestamp else None,
+                }
+        
+        # If still no location, try location_analyzer active_locations cache
+        if not last_loc:
+            cached_loc = location_analyzer.active_locations.get(str(bus.id))
+            if cached_loc:
+                last_loc = {
+                    "latitude": cached_loc.get("lat"),
+                    "longitude": cached_loc.get("lng"),
+                    "speed": cached_loc.get("speed", 0.0),
+                    "direction": cached_loc.get("bearing", cached_loc.get("direction", 0.0)),
+                    "timestamp": cached_loc.get("timestamp", None),
+                }
+        
+        # Bus location active state: if bus is ON, show active status correctly in dashboard
+        is_active = bus.location_sharing_active if hasattr(bus, 'location_sharing_active') else False
+        if bus_info and bus_info.get("has_last_location"):
+            is_active = True
+        
         driver = db.query(models.User).filter(models.User.id == bus.driver_id).first() if bus.driver_id else None
         result.append({
             "id": bus.id,
@@ -130,6 +337,7 @@ async def admin_get_all_buses(db: Session = Depends(get_db), current_user: model
             "driver_phone": bus.driver_phone,
             "live_location": last_loc,
             "active_users": bus_info.get("user_count", 0) if bus_info else 0,
+            "location_sharing_active": is_active,  # Bus location active state
         })
     return result
 

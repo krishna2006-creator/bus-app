@@ -43,6 +43,17 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Firebase Cloud Messaging Service -->
+        <!-- Handles FCM token refresh and incoming push notifications -->
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
