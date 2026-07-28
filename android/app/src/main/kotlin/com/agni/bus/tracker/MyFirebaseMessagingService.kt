@@ -78,7 +78,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
             // Display the notification
             showNotification(
-                title = it.title ?: getString(R.string.app_name),
+                title = it.title ?: "Bus Tracker",
                 body = it.body ?: "",
                 clickAction = it.clickAction,
                 data = remoteMessage.data
@@ -150,7 +150,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         // Build the notification
         val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification) // Replace with your app's notification icon
+            .setSmallIcon(android.R.drawable.ic_dialog_info) // Replace with your app's notification icon
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)
@@ -186,14 +186,4 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         // client.newCall(request).enqueue(...)
     }
 }
-</arg_value>
-<task_progress>
-- [x] Analyze project structure and existing code
-- [x] Update backend serviceAccountKey.json with bustracker-afb3c credentials
-- [x] Update backend config.py with correct FCM project ID and sender ID
-- [ ] Create FastAPI /send-notification endpoint using firebase-admin SDK (HTTP v1)
-- [x] Create Android Kotlin MyFirebaseMessagingService class
-- [ ] Update AndroidManifest.xml with notification service registration
-- [ ] Verify google-services.json and gradle dependencies
-- [ ] Final verification of all integration points
-</task_progress></tool_call>
+
