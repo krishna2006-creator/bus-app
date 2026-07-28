@@ -166,7 +166,7 @@ async def send_notification(payload: NotificationRequest):
         message = messaging.Message(
             token=payload.token,
             notification=messaging.Notification(
-                title=payload.title, body=payload.body, sound=payload.sound,
+                title=payload.title, body=payload.body,
             ),
             data=payload.data or {},
             android=messaging.AndroidConfig(
