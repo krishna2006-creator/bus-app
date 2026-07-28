@@ -21,11 +21,14 @@ class User(Base):
     boarding_stop_id = Column(Integer, ForeignKey("bus_stops.id"), nullable=True)
     phone = Column(String, nullable=True)
     assigned_bus_id = Column(Integer, ForeignKey("buses.id"), nullable=True)
+    # Student login: individual login mapped to bus room ID
+    bus_room_id = Column(Integer, ForeignKey("buses.id"), nullable=True)
 
     boarding_stop = relationship("BusStop", foreign_keys=[boarding_stop_id])
     pinned_buses = relationship("PinnedBus", back_populates="user")
     notification_settings = relationship("NotificationSetting", back_populates="user", uselist=False)
     assigned_bus = relationship("Bus", foreign_keys=[assigned_bus_id])
+    bus_room = relationship("Bus", foreign_keys=[bus_room_id])
 
 class Bus(Base):
     __tablename__ = "buses"
@@ -34,8 +37,11 @@ class Bus(Base):
     route_name = Column(String)
     capacity = Column(Integer)
     driver_id = Column(String, ForeignKey("users.id"), nullable=True)
-    status = Column(String, default="active")
+    status = Column(String, default="active")  # active, inactive, maintenance
+    is_active = Column(Boolean, default=True)  # True if bus is ON and sharing location
     driver_phone = Column(String, nullable=True)
+    # Bus location active state: if bus is ON, show active status correctly in dashboard
+    location_sharing_active = Column(Boolean, default=False)
 
     stops = relationship("BusStop", back_populates="bus")
     pinned_by_users = relationship("PinnedBus", back_populates="bus")

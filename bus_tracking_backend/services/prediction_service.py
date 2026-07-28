@@ -4,9 +4,11 @@ from ..utils.geo_utils import get_osrm_route, calculate_distance_km, estimate_et
 from typing import Optional, Dict
 from datetime import datetime
 
-# Agni College Location (Reference for "Passed Stop" logic)
-COLLEGE_LATITUDE = 12.8482
-COLLEGE_LONGITUDE = 80.1943
+# Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
+# Coordinates: 12°50'56"N 80°11'38"E
+# Fixed: correct college coordinates for marker placement
+COLLEGE_LATITUDE = 12.8489
+COLLEGE_LONGITUDE = 80.1939
 
 class PredictionService:
     def __init__(self):

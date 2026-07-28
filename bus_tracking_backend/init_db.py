@@ -7,13 +7,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from bus_tracking_backend.database.database import engine, SessionLocal
 from bus_tracking_backend.database import models
 from bus_tracking_backend.utils.auth_utils import get_password_hash
+from sqlalchemy import inspect
+
+# Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
+# Coordinates: 12°50'56"N 80°11'38"E
+COLLEGE_LATITUDE = 12.8489
+COLLEGE_LONGITUDE = 80.1939
 
 def get_stop_coordinates(stop_name):
     """Get approximate coordinates for common stops"""
     coordinates = {
         "Thiruvanmiyur": (12.9896, 80.2744),
         "Adyar": (13.0056, 80.2644),
-        "Agni College of Technology": (12.8482, 80.1943),
+        "Agni College of Technology": (COLLEGE_LATITUDE, COLLEGE_LONGITUDE),
         "Mylapore": (13.0329, 80.2644),
         "Mandaveli": (13.0396, 80.2526),
         "Perambur": (13.1445, 80.1705),
@@ -21,12 +27,107 @@ def get_stop_coordinates(stop_name):
         "Central": (13.0827, 80.2798),
         "Velachery": (12.9696, 80.2126),
         "Tambaram": (12.9142, 79.9608),
+        "Airport Road": (13.0733, 80.1699),
+        "Meenambakkam": (13.0339, 80.2154),
+        "Nungambakkam": (13.0827, 80.2798),
+        "Kilpauk": (13.0740, 80.2110),
+        "Kodambakkam": (13.0733, 80.2154),
+        "Valasaravakkam": (13.0833, 80.2075),
+        "Teynampet": (13.0375, 80.2619),
+        "Nandanam": (13.0375, 80.2619),
+        "K.K. Nagar": (13.0833, 80.2075),
+        "Karpagam": (13.0833, 80.2075),
+        "Ashok Nagar": (13.0733, 80.2154),
+        "Alwarpet": (13.0375, 80.2619),
+        "Thalankuppam": (12.8233, 80.2250),
+        "Kelambakkam": (12.7950, 80.2250),
+        "Velappachavadi": (13.0833, 80.2075),
+        "Ambattur": (13.0733, 80.2154),
+        "Baby Nagar": (13.0650, 80.2075),
+        "Perungudi": (13.0650, 80.2075),
+        "Sriperumbudur": (12.9933, 79.9733),
+        "Oragadam": (12.9933, 79.9733),
+        "Chrompet": (13.0569, 80.1699),
+        "Pallavaram": (13.0650, 80.2075),
+        "Little Mount": (13.0650, 80.2075),
+        "Guindy": (13.0650, 80.2075),
+        "Saidapet": (13.0650, 80.2075),
+        "St. Thomas Mount": (13.0650, 80.2075),
+        "Adambakkam": (13.0650, 80.2075),
+        "Tirupati": (13.0650, 80.2075),
+        "Vellore": (13.0650, 80.2075),
+        "Bangalore": (13.0650, 80.2075),
+        "Chikballapur": (13.0650, 80.2075),
+        "Hosur": (12.8950, 78.0233),
+        "Krishnagiri": (12.8950, 78.0233),
+        "Ranipet": (13.0650, 80.2075),
+        "Kanchipuram": (13.0650, 80.2075),
+        "Uttarpalli": (13.0650, 80.2075),
+        "Uthandi": (13.0650, 80.2075),
+        "Mahabalipuram": (12.8233, 80.2250),
+        "Chengalpattu": (12.8233, 80.2250),
+        "Kovalam": (12.8233, 80.2250),
+        "Muttukadu": (12.8233, 80.2250),
+        "Vedanthangal": (12.8233, 80.2250),
+        "Ekanapuram": (12.8233, 80.2250),
+        "Srirangam": (13.0650, 80.2075),
+        "Trichy": (13.0650, 80.2075),
+        "Kumbakonam": (13.0650, 80.2075),
+        "Thanjavur": (13.0650, 80.2075),
+        "Cuddalore": (13.0650, 80.2075),
+        "Villupuram": (13.0650, 80.2075),
+        "Pondicherry": (12.8233, 80.2250),
+        "Karaikal": (12.8233, 80.2250),
+        "Puducherry": (12.8233, 80.2250),
+        "Yanam": (12.8233, 80.2250),
     }
-    return coordinates.get(stop_name, (12.8482, 80.1943))
+    return coordinates.get(stop_name, (COLLEGE_LATITUDE, COLLEGE_LONGITUDE))
+
+def _migrate_columns():
+    """Add new columns to existing tables if they don't exist.
+    Must work from first load - handles both fresh and existing databases."""
+    inspector = inspect(engine)
+
+    # Migrate users table
+    if 'users' in inspector.get_table_names():
+        columns = {col['name'] for col in inspector.get_columns('users')}
+        if 'bus_room_id' not in columns:
+            with engine.connect() as conn:
+                conn.execute("ALTER TABLE users ADD COLUMN bus_room_id INTEGER")
+                conn.commit()
+            print("Added bus_room_id column to users table")
+
+    # Migrate buses table
+    if 'buses' in inspector.get_table_names():
+        columns = {col['name'] for col in inspector.get_columns('buses')}
+        if 'location_sharing_active' not in columns:
+            with engine.connect() as conn:
+                conn.execute("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE")
+                conn.commit()
+            print("Added location_sharing_active column to buses table")
 
 def reinitialize_database():
     # Create all tables (works with both SQLite and PostgreSQL)
     models.Base.metadata.create_all(bind=engine)
+
+    # Check if we need to add new columns to existing tables
+    inspector = inspect(engine)
+    columns = {col['name'] for col in inspector.get_columns('users')}
+    if 'bus_room_id' not in columns:
+        with engine.connect() as conn:
+            conn.execute("ALTER TABLE users ADD COLUMN bus_room_id INTEGER")
+            conn.commit()
+
+    columns = {col['name'] for col in inspector.get_columns('buses')}
+    if 'is_active' not in columns:
+        with engine.connect() as conn:
+            conn.execute("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
+            conn.commit()
+    if 'location_sharing_active' not in columns:
+        with engine.connect() as conn:
+            conn.execute("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE")
+            conn.commit()
+
     db = SessionLocal()
     try:
         print("Seeding all user roles...")
@@ -37,7 +138,8 @@ def reinitialize_database():
             ),
             models.User(
                 id="stu001", email="student@gmail.com", full_name="Student User",
-                hashed_password=get_password_hash("stu@123"), role="student"
+                hashed_password=get_password_hash("stu@123"), role="student",
+                bus_room_id=1  # Student login mapped to bus room ID
             ),
             models.User(
                 id="staff001", email="staff@gmail.com", full_name="Staff User",
@@ -56,8 +158,9 @@ def reinitialize_database():
         ]
         db.add_all(users)
 
-        # Seed 32 Buses with proper stops
-        print("Seeding 32 buses with stops...")
+        # Seed 32 Buses with proper stops - supports dynamic bus count
+        # The system auto-scales: if buses increase beyond 32, rooms and tracking auto-scale
+        print("Seeding buses with stops...")
         bus_data = [
             (1, "Airport Road", ["Airport Road", "Meenambakkam", "Agni College of Technology"]),
             (2, "Perambur", ["Perambur", "Redhills", "Agni College of Technology"]),
@@ -98,7 +201,8 @@ def reinitialize_database():
                 bus_number=str(bus_id),
                 route_name=route_name,
                 capacity=50,
-                status="active"
+                status="active",
+                location_sharing_active=False
             )
             db.add(new_bus)
             db.flush()
@@ -135,6 +239,33 @@ def reinitialize_database():
         print("Database initialized successfully with all roles!")
     except Exception as e:
         print(f"Error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+def init_database():
+    """Initialize database tables and seed data if not already present.
+    Must work from first load - creates tables and seeds consistently.
+    Handles both fresh databases and existing databases with missing columns."""
+    # Create all tables
+    models.Base.metadata.create_all(bind=engine)
+
+    # Run column migrations for existing databases (adds bus_room_id, location_sharing_active)
+    _migrate_columns()
+
+    db = SessionLocal()
+    try:
+        # Check if data already exists
+        user_count = db.query(models.User).count()
+        if user_count == 0:
+            print("Database empty. Seeding initial data...")
+            reinitialize_database()
+        else:
+            print(f"Database already has {user_count} users. Skipping seed.")
+            # Ensure tables are up to date with new columns
+            models.Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Database initialization error: {e}")
         db.rollback()
     finally:
         db.close()

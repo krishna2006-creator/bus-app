@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Seed driver users (1-32) for bus tracking system."""
+"""Seed driver users (1-32) for bus tracking system.
+Fixed: uses assigned_bus_id instead of non-existent bus_id field.
+Driver login: fixed ID/password authentication so drivers can log in and share location properly."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from database.database import SessionLocal
@@ -23,7 +25,7 @@ def seed_drivers():
                 role='driver',
                 hashed_password=bcrypt.hash(PASSWORD),
                 is_active=True,
-                bus_id=i,
+                assigned_bus_id=i,  # Fixed: use assigned_bus_id instead of bus_id
             )
             db.add(driver)
             print('Created driver {}'.format(i))

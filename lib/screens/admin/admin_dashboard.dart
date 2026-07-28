@@ -128,7 +128,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 children: [
                   // Header Section
                   Container(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -203,7 +203,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.sm),
                         Row(
                           children: [
                             _StatCard(
@@ -243,8 +243,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                       if (!hasActiveBuses) {
                         return Padding(
-                          padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                              AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+                          padding: const EdgeInsets.fromLTRB(AppSpacing.sm,
+                              AppSpacing.sm, AppSpacing.sm, AppSpacing.xs),
                           child: Card(
                             elevation: 2,
                             shape: RoundedRectangleBorder(
@@ -280,32 +280,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         );
                       }
 
-                      return Column(
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.fromLTRB(AppSpacing.lg,
-                                AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
-                            child: Text(
-                              "Live Tracking",
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 300,
-                            child: DashboardTrackingWidget(),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                        ],
-                      );
+                      return const DashboardTrackingWidget();
                     },
                   ),
 
                   // Quick Actions Section
                   const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                    padding: EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                     child: Text(
                       "Quick Actions",
                       style: TextStyle(
@@ -314,10 +295,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.xs),
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                        horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
                     child: Row(
                       children: [
                         Expanded(
@@ -360,7 +341,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   Padding(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                     child: Row(
                       children: [
                         Expanded(
@@ -394,10 +375,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
 
                   // Bus List Section
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.sm),
                   Padding(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                     child: Row(
                       children: [
                         const Text(
@@ -424,7 +405,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   if (_showBusList)
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                          horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
                       child: TextField(
                         controller: _busSearchController,
                         decoration: InputDecoration(
@@ -452,7 +433,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       padding:
-                          const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                          const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
                       itemCount: busService.buses.where((bus) {
                         final query = _busSearchQuery.toLowerCase();
                         return query.isEmpty ||
@@ -479,7 +460,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         );
                       },
                     ),
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.sm),
                 ],
               ),
             ),

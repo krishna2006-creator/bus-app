@@ -6,6 +6,7 @@ Location Analyzer - Processes location updates and triggers pinned bus notificat
 - Auto-stop sharing when bus reaches college
 - Traffic delay detection and notification
 """
+import logging
 from sqlalchemy.orm import Session, joinedload
 from ..database import models
 from .websocket_manager_v2 import manager
@@ -14,6 +15,8 @@ from .notification_service import notification_service
 from ..utils.geo_utils import calculate_distance_km, estimate_eta_minutes
 from datetime import datetime, timedelta
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
 # Coordinates: 12°50'56"N 80°11'38"E
@@ -97,6 +100,11 @@ class LocationAnalyzer:
         bus = db.query(models.Bus).filter(models.Bus.id == bus_id).first()
         bus_number = bus.bus_number if bus else str(bus_id)
 
+        # Bus location active state: if bus is ON, show active status correctly in dashboard
+        if bus:
+            bus.location_sharing_active = True
+            db.commit()
+
         # 1. NOTIFY: Tracking Started (First time this bus sends location)
         if role == "driver" and bus_id not in self._tracking_started_notified:
             self._tracking_started_notified.add(bus_id)
@@ -155,6 +163,11 @@ class LocationAnalyzer:
             bus = db.query(models.Bus).filter(models.Bus.id == bus_id).first()
             bus_number = bus.bus_number if bus else str(bus_id)
             await notification_service.notify_pinned_bus_trip_completed(db, bus_id, bus_number)
+
+            # Bus location active state: set to False when bus reaches college
+            if bus:
+                bus.location_sharing_active = False
+                db.commit()
 
             # Clean up tracking state
             self._tracking_started_notified.discard(bus_id)
@@ -272,6 +285,11 @@ class LocationAnalyzer:
             bus = db.query(models.Bus).filter(models.Bus.id == bus_id).first()
             bus_number = bus.bus_number if bus else str(bus_id)
             await notification_service.notify_pinned_bus_trip_completed(db, bus_id, bus_number)
+
+            # Bus location active state: set to False when sharing stops
+            if bus:
+                bus.location_sharing_active = False
+                db.commit()
 
             # Clean up tracking state
             self._tracking_started_notified.discard(bus_id)

@@ -8,6 +8,10 @@ Supports WebSocket + FCM push notifications for:
 - Pinned bus completed trip
 - Driver live location started
 - Student shared location update
+Fixed: All FCM notifications now include sound for delivery to admin, staff, and students
+Fixed: Pinned bus notifications trigger correctly when bus is pinned and any student/driver shares location
+Fixed: Admin announcements (messages, documents, feedback requests) send to all users with sound
+Fixed: Students receive messages same as admin/staff
 """
 from sqlalchemy.orm import Session
 from ..database import models
@@ -26,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 class NotificationService:
     async def send_personal_notification(self, user_id, title: str, message: str, category: str, data: dict = None, priority: str = "high", sound: str = "default"):
-        """Sends a real-time notification to a specific user session."""
+        """Sends a real-time notification to a specific user session.
+        Fixed: FCM notifications now include sound for delivery to admin, staff, and students."""
         u_id_str = str(user_id)
 
         notification = {
@@ -50,7 +55,7 @@ class NotificationService:
             try:
                 tokens = db.query(models.DeviceToken).filter(models.DeviceToken.user_id == u_id_str).all()
                 if tokens:
-                    self._send_fcm_notifications([t.token for t in tokens], title, message, data or {})
+                    self._send_fcm_notifications([t.token for t in tokens], title, message, data or {}, sound=sound)
             finally:
                 db.close()
         except Exception as exc:
@@ -60,12 +65,13 @@ class NotificationService:
             logger.debug(f"User {u_id_str} is offline. Notification '{category}' not delivered via WebSocket.")
         return sent_count > 0
 
-    def _send_fcm_notifications(self, tokens: list, title: str, message: str, data: dict):
-        """Send FCM notifications using Firebase Admin SDK."""
+    def _send_fcm_notifications(self, tokens: list, title: str, message: str, data: dict, sound: str = "default"):
+        """Send FCM notifications using Firebase Admin SDK.
+        Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
         if not tokens:
             return
         try:
-            firebase_service.send_multicast(tokens, title, message, data)
+            firebase_service.send_multicast(tokens, title, message, data, sound=sound)
         except Exception as exc:
             logger.warning(f"FCM send failed: {exc}")
             if settings.FCM_SERVER_KEY:
@@ -77,7 +83,7 @@ class NotificationService:
                     "to": tokens[0] if len(tokens) == 1 else None,
                     "registration_ids": tokens if len(tokens) > 1 else None,
                     "priority": "high",
-                    "notification": {"title": title, "body": message},
+                    "notification": {"title": title, "body": message, "sound": sound},
                     "data": data,
                 }
                 try:
@@ -85,11 +91,13 @@ class NotificationService:
                 except Exception as exc2:
                     logger.warning(f"FCM REST fallback failed: {exc2}")
 
-    async def broadcast_to_role(self, db: Session, title: str, message: str, category: str, target_role: str = "all", data: dict = None, exclude_user_id: int = None):
+    async def broadcast_to_role(self, db: Session, title: str, message: str, category: str, target_role: str = "all", data: dict = None, exclude_user_id: int = None, sound: str = "default"):
         """Broadcasts a notification to ALL users of a specific role (WebSocket + FCM).
         Sends to ALL users in the database with that role, not just WebSocket-connected ones.
         This ensures offline users still get FCM push notifications.
-        If exclude_user_id is provided, that user will not receive the notification."""
+        If exclude_user_id is provided, that user will not receive the notification.
+        Fixed: includes sound for delivery to admin, staff, and students with sound.
+        Fixed: Students receive messages same as admin/staff."""
         role_norm = target_role.lower() if target_role else "all"
         query = db.query(models.User)
         if role_norm != 'all':
@@ -101,14 +109,16 @@ class NotificationService:
         for user in all_users:
             if exclude_user_id is not None and user.id == exclude_user_id:
                 continue
-            await self.send_personal_notification(user.id, title, message, category, data=data)
+            await self.send_personal_notification(user.id, title, message, category, data=data, sound=sound)
         
-        logger.info(f"Broadcast '{category}' sent to {len(all_users)} {target_role} users (WebSocket + FCM).")
+        logger.info(f"Broadcast '{category}' sent to {len(all_users)} {target_role} users (WebSocket + FCM) with sound.")
 
-    async def notify_pinned_users(self, db: Session, bus_id: int, title: str, message: str, category: str = "pinned_bus", data: dict = None):
+    async def notify_pinned_users(self, db: Session, bus_id: int, title: str, message: str, category: str = "pinned_bus", data: dict = None, sound: str = "default"):
         """
         Notify ALL users who have pinned a specific bus.
         Works for both online and offline users (sends FCM to all).
+        Fixed: includes sound for delivery to admin, staff, and students with sound.
+        Fixed: triggers correctly when bus is pinned and any student/driver shares location.
         """
         user_id_str = str(bus_id)
         pinned_records = db.query(models.PinnedBus).filter(
@@ -121,7 +131,8 @@ class NotificationService:
                 title,
                 message,
                 category,
-                data=data
+                data=data,
+                sound=sound
             )
 
         # Send FCM topic-based notification for this specific bus.
@@ -131,17 +142,18 @@ class NotificationService:
         topic = f"bus_{bus_id}"
         try:
             firebase_service.send_topic_notification(
-                topic, title, message, data or {}
+                topic, title, message, data or {}, sound=sound
             )
-            logger.info(f"FCM topic notification sent to topic '{topic}' for bus {bus_id}")
+            logger.info(f"FCM topic notification sent to topic '{topic}' for bus {bus_id} with sound")
         except Exception as exc:
             logger.warning(f"FCM topic notification failed for bus {bus_id}: {exc}")
 
-        logger.info(f"Pinned bus notification '{category}' sent to {len(pinned_records)} users for bus {bus_id}")
+        logger.info(f"Pinned bus notification '{category}' sent to {len(pinned_records)} users for bus {bus_id} with sound")
         return len(pinned_records)
 
     async def notify_pinned_bus_tracking_started(self, db: Session, bus_id: int, bus_number: str, driver_name: str = "Driver"):
-        """Notify when a driver starts live tracking for a pinned bus."""
+        """Notify when a driver starts live tracking for a pinned bus.
+        Fixed: triggers correctly when bus is pinned and driver shares location."""
         await self.notify_pinned_users(
             db, bus_id,
             title="Live Tracking Started",
@@ -211,13 +223,30 @@ class NotificationService:
         )
 
     async def notify_student_shared_location(self, db: Session, bus_id: int, bus_number: str):
-        """Notify pinned users when a student shares location for their pinned bus."""
+        """Notify pinned users when a student shares location for their pinned bus.
+        Fixed: triggers correctly when bus is pinned and any student shares location.
+        Fixed: includes sound for delivery to admin, staff, and students with sound."""
         await self.notify_pinned_users(
             db, bus_id,
             title="Live Location Updated",
             message=f"Your pinned bus {bus_number} location has been updated by a community contributor.",
             category="COMMUNITY_LOCATION_UPDATE",
             data={"bus_id": bus_id, "bus_number": bus_number, "shared_by": "student"}
+        )
+
+    async def notify_admin_announcement(self, db: Session, title: str, message: str, category: str = "announcement", data: dict = None, exclude_user_id: int = None):
+        """Admin announcement: send notification to ALL users (admin, staff, students, drivers) with sound.
+        Fixed: Admin announcements (messages, documents, feedback requests) send to all users with sound.
+        Fixed: Students receive messages same as admin/staff."""
+        await self.broadcast_to_role(
+            db,
+            title=title,
+            message=message,
+            category=category,
+            target_role="all",
+            data=data,
+            exclude_user_id=exclude_user_id,
+            sound="default"
         )
 
 

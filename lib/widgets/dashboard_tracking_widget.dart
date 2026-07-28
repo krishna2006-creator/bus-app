@@ -85,6 +85,11 @@ class _DashboardTrackingWidgetState extends State<DashboardTrackingWidget> {
         locService.getBestLocationForBus(selectedBus.busNumber);
     final liveLocation = liveTracking.getLatestLocation(selectedBus.busNumber);
 
+    // Hide widget if no location data is available
+    if (bestLocation == null && liveLocation == null) {
+      return const SizedBox.shrink();
+    }
+
     BusLocation? selectedLocation;
     if (bestLocation != null) {
       selectedLocation = bestLocation;
@@ -112,126 +117,12 @@ class _DashboardTrackingWidgetState extends State<DashboardTrackingWidget> {
       }
     }
 
-    return Card(
-      margin: const EdgeInsets.all(16),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        children: [
-          // Header with Bus Selection
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.blue),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Live Tracking',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey,
-                        ),
-                      ),
-                      Text(
-                        'Bus ${selectedBus.busNumber}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.refresh,
-                          size: 20, color: Colors.blue),
-                      onPressed: () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        await locService.refreshBusLocations();
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                                content: Text('Tracking refreshed'),
-                                duration: Duration(seconds: 1)),
-                          );
-                        }
-                      },
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.fullscreen,
-                          size: 20, color: Colors.blue),
-                      onPressed: () =>
-                          context.push('/track-bus-maps', extra: selectedBus),
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    DropdownButton<String>(
-                      value: _selectedBusNumber,
-                      underline: const SizedBox(),
-                      style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue,
-                          fontWeight: FontWeight.bold),
-                      items: activeBuses
-                          .map((bus) => DropdownMenuItem(
-                              value: bus.busNumber,
-                              child: Text('B${bus.busNumber}')))
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedBusNumber = value);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // Map Widget
-          selectedLocation != null
-              ? BusTrackingMapWidget(
-                  bus: selectedBus,
-                  currentLocation: selectedLocation,
-                  boardingPointLocation: boardingPointLatLng,
-                  height: 180,
-                  onMapReady: () {},
-                )
-              : Container(
-                  height: 180,
-                  color: Colors.blue.shade50,
-                  child: const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 12),
-                        Text('Connecting to live bus feed...',
-                            style: TextStyle(color: Colors.blue)),
-                      ],
-                    ),
-                  ),
-                ),
-        ],
-      ),
+    return BusTrackingMapWidget(
+      bus: selectedBus,
+      currentLocation: selectedLocation,
+      boardingPointLocation: boardingPointLatLng,
+      height: 150,
+      onMapReady: () {},
     );
   }
 }

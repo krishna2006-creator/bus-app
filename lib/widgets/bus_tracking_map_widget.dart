@@ -21,7 +21,7 @@ class BusTrackingMapWidget extends StatefulWidget {
     this.boardingPointLocation,
     this.routeHistory = const [],
     this.onMapReady,
-    this.height = 300,
+    this.height = 200,
   });
 
   @override
