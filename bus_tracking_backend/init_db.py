@@ -93,6 +93,13 @@ def _migrate_columns():
                     print(f"bus_room_id migration skipped/failed: {exc}")
         if 'buses' in inspector.get_table_names():
             columns = {col['name'] for col in inspector.get_columns('buses')}
+            if 'is_active' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+                    print("Added is_active column to buses table")
+                except Exception as exc:
+                    print(f"is_active migration skipped/failed: {exc}")
             if 'location_sharing_active' not in columns:
                 try:
                     with engine.begin() as conn:
@@ -100,6 +107,32 @@ def _migrate_columns():
                     print("Added location_sharing_active column to buses table")
                 except Exception as exc:
                     print(f"location_sharing_active migration skipped/failed: {exc}")
+        # CRITICAL: notification_settings table in older deployments only has (id, user_id).
+        # The NotificationSetting model requires push_enabled/email_enabled/sms_enabled columns,
+        # so registration would otherwise fail with "column push_enabled does not exist".
+        if 'notification_settings' in inspector.get_table_names():
+            columns = {col['name'] for col in inspector.get_columns('notification_settings')}
+            if 'push_enabled' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE notification_settings ADD COLUMN push_enabled BOOLEAN DEFAULT TRUE"))
+                    print("Added push_enabled column to notification_settings table")
+                except Exception as exc:
+                    print(f"push_enabled migration skipped/failed: {exc}")
+            if 'email_enabled' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE notification_settings ADD COLUMN email_enabled BOOLEAN DEFAULT FALSE"))
+                    print("Added email_enabled column to notification_settings table")
+                except Exception as exc:
+                    print(f"email_enabled migration skipped/failed: {exc}")
+            if 'sms_enabled' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE notification_settings ADD COLUMN sms_enabled BOOLEAN DEFAULT FALSE"))
+                    print("Added sms_enabled column to notification_settings table")
+                except Exception as exc:
+                    print(f"sms_enabled migration skipped/failed: {exc}")
     except Exception as exc:
         print(f"Migration column check warning (non-fatal): {exc}")
 

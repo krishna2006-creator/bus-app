@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -10,6 +11,8 @@ from ..schemas import user as user_schemas
 from ..schemas import token as token_schemas
 from ..utils.auth_utils import authenticate_user, create_access_token, get_password_hash, get_current_user
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/auth",
@@ -41,6 +44,7 @@ def register(user: user_schemas.UserCreate, db: Session = Depends(get_db)):
         return {"access_token": access_token, "token_type": "bearer"}
     except Exception as e:
         db.rollback()
+        logger.error("Registration failed for email=%s: %s", user.email, e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
