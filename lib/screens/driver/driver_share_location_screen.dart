@@ -34,6 +34,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
   double _accuracy = 0;
   double _speed = 0;
   String _statusMessage = 'Initializing...';
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _positionSub?.cancel();
     _locationChannel?.sink.close();
     super.dispose();
@@ -101,6 +103,9 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
       debugPrint('Geolocator stream error: $e');
       _setStatus('Error: $e', isError: true);
     });
+
+    // Auto-refresh location every 2 seconds for accurate real-time tracking
+    _startAutoRefresh();
   }
 
   Future<void> _connectWebSocket() async {
@@ -162,7 +167,27 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
     } catch (_) {}
   }
 
+  /// Auto-refresh location every 2 seconds for accurate real-time tracking
+  void _startAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!mounted || !_isSharing) return;
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
+        );
+        _updateLocation(pos);
+        _sendViaWebSocket(pos);
+      } catch (e) {
+        debugPrint('Auto-refresh location error: $e');
+      }
+    });
+  }
+
   Future<void> _stopSharing() async {
+    _autoRefreshTimer?.cancel();
     // Capture services before async operations
     final locService = context.read<LocationService>();
     final busNumber = _busNumber;

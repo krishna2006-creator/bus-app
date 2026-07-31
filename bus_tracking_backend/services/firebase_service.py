@@ -230,20 +230,22 @@ class FirebaseService:
                 body=body,
             )
             
-            # Android config with sound
+            # Android config with sound and badge
             android_config = messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(
                     sound=sound,  # Sound for Android
                     click_action="FLUTTER_NOTIFICATION_CLICK",
+                    notification_count=1,  # Badge count for Android
                 ),
             )
             
-            # APNS config with sound for iOS
+            # APNS config with sound and badge for iOS
             apns_config = messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound=sound,  # Sound for iOS
+                        badge=1,  # Badge count for iOS
                         content_available=True,
                     ),
                 ),
@@ -278,20 +280,22 @@ class FirebaseService:
                 body=body,
             )
             
-            # Android config with sound
+            # Android config with sound and badge
             android_config = messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(
                     sound=sound,  # Sound for Android
                     click_action="FLUTTER_NOTIFICATION_CLICK",
+                    notification_count=1,  # Badge count for Android
                 ),
             )
             
-            # APNS config with sound for iOS
+            # APNS config with sound and badge for iOS
             apns_config = messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound=sound,  # Sound for iOS
+                        badge=1,  # Badge count for iOS
                         content_available=True,
                     ),
                 ),

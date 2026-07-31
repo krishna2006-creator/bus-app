@@ -165,7 +165,18 @@ def get_user_requests(db: Session, user_id: str):
 def update_user_boarding_stop(db: Session, user_id: str, stop_id: int):
     """
     Updates the boarding_stop_id for a specific user.
+    Validates that the stop_id exists in the bus_stops table first.
+    Returns None if the user or stop is not found.
     """
+    # Validate stop_id is a positive integer (negative values like -2 are invalid)
+    if stop_id <= 0:
+        return None
+    
+    # Verify the stop exists in the database
+    db_stop = db.query(models.BusStop).filter(models.BusStop.id == stop_id).first()
+    if not db_stop:
+        return None
+    
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user:
         db_user.boarding_stop_id = stop_id

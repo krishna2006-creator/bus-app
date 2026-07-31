@@ -12,6 +12,7 @@ import 'package:agni_college_bus_tracker/services/api_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -23,7 +24,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 class NotificationService extends ChangeNotifier {
   static const _notificationsKey = 'notifications';
+  static const _badgeCountKey = 'badge_count';
   List<AppNotification> _notifications = [];
+  int _badgeCount = 0;
   WebSocketChannel? _channel;
   final StreamController<Map<String, dynamic>> _messageController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -31,6 +34,7 @@ class NotificationService extends ChangeNotifier {
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
   List<AppNotification> get notifications => _notifications;
+  int get badgeCount => _badgeCount;
 
   Future<void> initialize(String? userId, String? authToken) async {
     try {
@@ -63,6 +67,10 @@ class NotificationService extends ChangeNotifier {
         debugPrint('Failed to load notifications: $e');
       }
     }
+
+    // Restore saved badge count and update app icon
+    _badgeCount = prefs.getInt(_badgeCountKey) ?? 0;
+    await _updateAppBadge();
 
     if (userId != null && authToken != null) {
       _connectNotificationWebSocket(userId, authToken);
@@ -254,6 +262,9 @@ class NotificationService extends ChangeNotifier {
 
     _notifications.insert(0, n);
     await _save();
+    // Increment badge count when a new notification arrives
+    _badgeCount++;
+    await _updateAppBadge();
     notifyListeners();
 
     if (!kIsWeb) {
@@ -329,13 +340,49 @@ class NotificationService extends ChangeNotifier {
     if (idx == -1) return;
     _notifications[idx].read = true;
     await _save();
+    // Decrement badge when a notification is read
+    if (_badgeCount > 0) {
+      _badgeCount--;
+      await _updateAppBadge();
+    }
     notifyListeners();
   }
 
   Future<void> deleteNotification(String id) async {
     _notifications.removeWhere((n) => n.id == id);
     await _save();
+    // Decrement badge when a notification is deleted
+    if (_badgeCount > 0) {
+      _badgeCount--;
+      await _updateAppBadge();
+    }
     notifyListeners();
+  }
+
+  /// Clear all badge count (when user opens app or views all notifications)
+  Future<void> clearBadge() async {
+    _badgeCount = 0;
+    await _updateAppBadge();
+    notifyListeners();
+  }
+
+  /// Update the app icon badge on the home screen
+  Future<void> _updateAppBadge() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_badgeCountKey, _badgeCount);
+    try {
+      if (!kIsWeb) {
+        if (_badgeCount > 0) {
+          if (await FlutterAppBadger.isAppBadgeSupported()) {
+            FlutterAppBadger.updateBadgeCount(_badgeCount);
+          }
+        } else {
+          FlutterAppBadger.removeBadge();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error updating app badge: $e");
+    }
   }
 
   List<AppNotification> forUser(String userId) {

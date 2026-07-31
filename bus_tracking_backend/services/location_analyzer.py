@@ -113,6 +113,12 @@ class LocationAnalyzer:
                 db, bus_id, bus_number, driver_name
             )
 
+        # 1b. NOTIFY: Location Updated (every update from driver)
+        elif role == "driver":
+            await notification_service.notify_pinned_bus_location_updated(
+                db, bus_id, bus_number
+            )
+
         # 2. NOTIFY: Student shared location
         if is_student_sharing:
             await notification_service.notify_student_shared_location(db, bus_id, bus_number)
