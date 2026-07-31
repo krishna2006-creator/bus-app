@@ -70,12 +70,9 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
     creds_b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
     if creds_b64:
         try:
-            # Strip any whitespace/newlines that may be added by env var editors
             creds_b64_clean = creds_b64.strip()
-            creds_data = json.loads(base64.b64decode(creds_b64_clean).decode("utf-8"))
-            # Fix private_key: ensure \n are real newlines (not escaped)
-            if "private_key" in creds_data:
-                creds_data["private_key"] = creds_data["private_key"].replace("\\n", "\n")
+            decoded_str = base64.b64decode(creds_b64_clean).decode("utf-8")
+            creds_data = json.loads(decoded_str)
             logger.info("Loading Firebase credentials from FIREBASE_CREDENTIALS_BASE64 env var.")
             return credentials.Certificate(creds_data)
         except Exception as exc:
