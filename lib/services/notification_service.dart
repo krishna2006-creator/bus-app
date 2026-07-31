@@ -369,19 +369,6 @@ class NotificationService extends ChangeNotifier {
   Future<void> _updateAppBadge() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_badgeCountKey, _badgeCount);
-    try {
-      if (!kIsWeb) {
-        if (_badgeCount > 0) {
-          if (await FlutterAppBadger.isAppBadgeSupported()) {
-            FlutterAppBadger.updateBadgeCount(_badgeCount);
-          }
-        } else {
-          FlutterAppBadger.removeBadge();
-        }
-      }
-    } catch (e) {
-      debugPrint("Error updating app badge: $e");
-    }
   }
 
   List<AppNotification> forUser(String userId) {
