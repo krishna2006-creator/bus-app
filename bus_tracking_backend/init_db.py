@@ -80,39 +80,55 @@ def get_stop_coordinates(stop_name):
     return coordinates.get(stop_name, (COLLEGE_LATITUDE, COLLEGE_LONGITUDE))
 
 def _migrate_columns():
-    inspector = inspect(engine)
-    if 'users' in inspector.get_table_names():
-        columns = {col['name'] for col in inspector.get_columns('users')}
-        if 'bus_room_id' not in columns:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
-                conn.commit()
-            print("Added bus_room_id column to users table")
-    if 'buses' in inspector.get_table_names():
-        columns = {col['name'] for col in inspector.get_columns('buses')}
-        if 'location_sharing_active' not in columns:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
-                conn.commit()
-            print("Added location_sharing_active column to buses table")
+    try:
+        inspector = inspect(engine)
+        if 'users' in inspector.get_table_names():
+            columns = {col['name'] for col in inspector.get_columns('users')}
+            if 'bus_room_id' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
+                    print("Added bus_room_id column to users table")
+                except Exception as exc:
+                    print(f"bus_room_id migration skipped/failed: {exc}")
+        if 'buses' in inspector.get_table_names():
+            columns = {col['name'] for col in inspector.get_columns('buses')}
+            if 'location_sharing_active' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
+                    print("Added location_sharing_active column to buses table")
+                except Exception as exc:
+                    print(f"location_sharing_active migration skipped/failed: {exc}")
+    except Exception as exc:
+        print(f"Migration column check warning (non-fatal): {exc}")
 
 def reinitialize_database():
     models.Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
-    columns = {col['name'] for col in inspector.get_columns('users')}
-    if 'bus_room_id' not in columns:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
-            conn.commit()
-    columns = {col['name'] for col in inspector.get_columns('buses')}
-    if 'is_active' not in columns:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
-            conn.commit()
-    if 'location_sharing_active' not in columns:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
-            conn.commit()
+    try:
+        inspector = inspect(engine)
+        columns = {col['name'] for col in inspector.get_columns('users')}
+        if 'bus_room_id' not in columns:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
+            except Exception:
+                pass
+        columns = {col['name'] for col in inspector.get_columns('buses')}
+        if 'is_active' not in columns:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+            except Exception:
+                pass
+        if 'location_sharing_active' not in columns:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"Reinit migration check warning (non-fatal): {exc}")
     db = SessionLocal()
     try:
         print("Seeding all user roles...")

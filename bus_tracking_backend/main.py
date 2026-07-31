@@ -113,9 +113,7 @@ app.add_middleware(
 
 os.makedirs("uploads", exist_ok=True)
 from fastapi.staticfiles import StaticFiles
-os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-api_router.mount("/uploads", StaticFiles(directory="uploads"), name="api_uploads")
 
 # ===========================================================================
 # Pydantic models for the /api/send-notification endpoint
@@ -138,6 +136,7 @@ class NotificationResponse(BaseModel):
 
 
 api_router = APIRouter(prefix="/api")
+api_router.mount("/uploads", StaticFiles(directory="uploads"), name="api_uploads")
 
 
 # ---------------------------------------------------------------------------
