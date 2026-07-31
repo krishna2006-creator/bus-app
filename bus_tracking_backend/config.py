@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     FCM_PROJECT_ID: str = os.getenv("FCM_PROJECT_ID", "bustracker-afb3c")
     FCM_SENDER_ID: str = os.getenv("FCM_SENDER_ID", "851331446616")
     FCM_API_URL: str = os.getenv("FCM_API_URL", "https://fcm.googleapis.com/fcm/send")
-    # Use absolute path for Firebase credentials
+    # Use absolute path for Firebase credentials 
     FIREBASE_CREDENTIALS_PATH: str = os.getenv("FIREBASE_CREDENTIALS_PATH", str(Path(__file__).parent / "firebase-key.json"))
     MINIO_BUCKET_DOCUMENTS: str = os.getenv("MINIO_BUCKET_DOCUMENTS", "documents")
     MINIO_BUCKET_ANNOUNCEMENTS: str = os.getenv("MINIO_BUCKET_ANNOUNCEMENTS", "announcements")

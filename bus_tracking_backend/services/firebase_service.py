@@ -30,30 +30,34 @@ class FirebaseService:
         self._init_firebase()
 
     def _init_firebase(self):
-        """Initialize Firebase Admin SDK"""
+        """Initialize Firebase Admin SDK using unified credential loader."""
         try:
             # Check if Firebase app is already initialized (e.g., by main.py)
             try:
                 self._app = firebase_admin.get_app()
-                self._db = firestore.client()
+                try:
+                    self._db = firestore.client()
+                except Exception as db_exc:
+                    logger.warning("Firestore client creation failed (FCM remains enabled): %s", db_exc)
+                    self._db = None
                 logger.info("Firebase app already initialized. Reusing existing app.")
                 return
             except ValueError:
                 pass  # App not yet initialized – proceed with initialization
 
-            creds_path = settings.FIREBASE_CREDENTIALS_PATH
-            if not creds_path:
-                logger.warning("FIREBASE_CREDENTIALS_PATH not set. Firebase disabled.")
+            from ..utils.firebase_helper import get_firebase_credential
+            cred = get_firebase_credential()
+            if not cred:
+                logger.warning("No valid Firebase credentials found. Firebase disabled.")
+                self._db = None
                 return
 
-            from pathlib import Path
-            if not Path(creds_path).exists():
-                logger.warning("Firebase credentials not found at %s. Firebase disabled.", creds_path)
-                return
-
-            cred = credentials.Certificate(creds_path)
             self._app = firebase_admin.initialize_app(cred)
-            self._db = firestore.client()
+            try:
+                self._db = firestore.client()
+            except Exception as db_exc:
+                logger.warning("Firestore client creation failed (FCM remains enabled): %s", db_exc)
+                self._db = None
             logger.info("Firebase initialized successfully")
         except Exception as e:
             logger.error("Firebase initialization failed: %s", e)

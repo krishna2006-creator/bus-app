@@ -156,8 +156,8 @@ class FileService extends ChangeNotifier {
   }
 
   Future<void> openFile(BuildContext context, UploadedFile file) async {
-    // If file is from backend (starts with /), open directly via URL
-    if (file.path.startsWith('/')) {
+    // If file is from backend, open/download via backend URL
+    if (file.path.startsWith('/') || file.path.contains('http')) {
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -167,10 +167,27 @@ class FileService extends ChangeNotifier {
       );
 
       try {
-        final baseUrlWithoutApi = ApiService.baseUrl.replaceAll('/api', '');
-        final fullUrl = '$baseUrlWithoutApi${file.path}';
+        String fullUrl = file.path;
+        if (fullUrl.startsWith('/')) {
+          final baseUrlWithoutApi = ApiService.baseUrl.replaceAll('/api', '');
+          fullUrl = '$baseUrlWithoutApi$fullUrl';
+        }
 
-        final response = await http.get(Uri.parse(fullUrl));
+        final token = await ApiService.getToken();
+        final headers = {
+          if (token != null) 'Authorization': 'Bearer $token',
+        };
+
+        var response = await http.get(Uri.parse(fullUrl), headers: headers);
+
+        // Fallback: If static /uploads/ returns 404, try the /api/documents/{id}/file endpoint
+        if (response.statusCode != 200 && file.id.isNotEmpty) {
+          final downloadUrl = '${ApiService.baseUrl}/documents/${file.id}/file';
+          final fallbackResponse = await http.get(Uri.parse(downloadUrl), headers: headers);
+          if (fallbackResponse.statusCode == 200) {
+            response = fallbackResponse;
+          }
+        }
 
         if (context.mounted) {
           Navigator.of(context).pop(); // Dismiss loading indicator

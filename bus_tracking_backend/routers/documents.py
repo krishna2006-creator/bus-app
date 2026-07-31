@@ -126,6 +126,37 @@ async def upload_document(
         "url": file_url
     }
 
+from fastapi.responses import FileResponse
+
+@router.get("/{document_id}/download")
+@router.get("/{document_id}/file")
+async def download_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_schemas.User = Depends(get_current_user)
+):
+    """Download/Stream document file by ID for any authenticated user."""
+    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document metadata not found")
+
+    file_path = os.path.join("uploads", doc.file_path)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Document file not found on server")
+
+    file_ext = os.path.splitext(doc.file_path)[1].lower()
+    media_type = "application/pdf" if file_ext == ".pdf" else (
+        "image/png" if file_ext == ".png" else (
+            "image/jpeg" if file_ext in [".jpg", ".jpeg"] else "application/octet-stream"
+        )
+    )
+
+    return FileResponse(
+        path=file_path,
+        filename=doc.name,
+        media_type=media_type
+    )
+
 @router.get("/{document_id}")
 async def get_document(
     document_id: int,

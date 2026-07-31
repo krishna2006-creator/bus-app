@@ -46,26 +46,8 @@ def _init_firebase():
     except ValueError:
         pass
 
-    creds_path = settings.FIREBASE_CREDENTIALS_PATH
-    cred = None
-
-    if creds_path and Path(creds_path).exists():
-        try:
-            cred = credentials.Certificate(creds_path)
-            logger.info("Firebase credentials loaded from file: %s", creds_path)
-        except Exception as exc:
-            logger.error("Failed to load Firebase credentials from file: %s", exc)
-
-    if cred is None:
-        import base64
-        creds_b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
-        if creds_b64:
-            try:
-                creds_json = json.loads(base64.b64decode(creds_b64))
-                cred = credentials.Certificate(creds_json)
-                logger.info("Firebase credentials loaded from env var.")
-            except Exception as exc:
-                logger.error("Failed to load Firebase credentials from base64: %s", exc)
+    from bus_tracking_backend.utils.firebase_helper import get_firebase_credential
+    cred = get_firebase_credential()
 
     if cred is None:
         logger.warning("Firebase credentials not found. FCM will be disabled.")
@@ -131,7 +113,9 @@ app.add_middleware(
 
 os.makedirs("uploads", exist_ok=True)
 from fastapi.staticfiles import StaticFiles
+os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+api_router.mount("/uploads", StaticFiles(directory="uploads"), name="api_uploads")
 
 # ===========================================================================
 # Pydantic models for the /api/send-notification endpoint
