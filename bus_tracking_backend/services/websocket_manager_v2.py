@@ -166,6 +166,11 @@ class BusRoom:
         """Store the last known location"""
         self.last_known_location = location
 
+    def clear_last_location(self) -> None:
+        """Clear the last known location (used when sharing stops)"""
+        self.last_known_location = None
+        self.location_sender_id = None
+
     def get_last_location(self) -> Optional[Dict[str, Any]]:
         """Get the last known location as dictionary"""
         if self.last_known_location:

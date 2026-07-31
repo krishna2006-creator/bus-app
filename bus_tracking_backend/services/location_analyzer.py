@@ -340,6 +340,11 @@ class LocationAnalyzer:
         if bus_id:
             manager.disconnect(u_id, bus_id=bus_id)
             await manager.broadcast_to_bus(bus_id, clear_signal)
+            # Also clear the BusRoom's cached last_known_location so the
+            # tracking page shows the bus as offline immediately
+            bus_room = manager.buses.get(bus_id)
+            if bus_room:
+                bus_room.clear_last_location()
         else:
             manager.disconnect(u_id)
             await manager.broadcast(clear_signal)

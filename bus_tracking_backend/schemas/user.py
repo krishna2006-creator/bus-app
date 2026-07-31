@@ -27,6 +27,7 @@ class User(UserBase):
     id: str
     boarding_stop_id: Optional[int] = None
     assigned_bus_id: Optional[int] = None
+    assigned_bus_number: Optional[str] = None
     phone: Optional[str] = None
     pinned_buses: List[PinnedBusSchema] = []
 

@@ -2,13 +2,13 @@ enum UserRole { admin, student, staff, driver }
 
 class User {
   final String id;
-  final String? password; // Optional - from backend JWT won't have this
+  final String? password;
   final UserRole role;
-  final String? name; // Supports both 'name' and 'full_name' from backend
+  final String? name;
   final String? email;
   final String? phone;
   final String? assignedBusNumber;
-  final int? assignedBusId; // From backend
+  final int? assignedBusId;
   final List<String> pinnedBuses;
   final int? boardingStopId;
   final DateTime createdAt;
@@ -16,7 +16,7 @@ class User {
 
   User({
     required this.id,
-    this.password, // Made optional
+    this.password,
     required this.role,
     this.name,
     this.email,
@@ -46,17 +46,36 @@ class User {
         'updatedAt': updatedAt.toIso8601String(),
       };
 
+  /// Parse pinned_buses which can be a list of strings (local format)
+  /// or a list of objects with bus_number (backend format)
+  static List<String> _parsePinnedBuses(dynamic data) {
+    if (data == null) return [];
+    if (data is List) {
+      final result = <String>[];
+      for (final item in data) {
+        if (item is String) {
+          result.add(item);
+        } else if (item is Map) {
+          final busNumber = item['bus_number'] ?? item['busNumber'];
+          if (busNumber != null) {
+            result.add(busNumber.toString());
+          }
+        }
+      }
+      return result;
+    }
+    return [];
+  }
+
   factory User.fromJson(Map<String, dynamic> json) {
-    // Handle role - accept both string and UserRole enum
     final roleStr = json['role'] is String
         ? json['role'] as String
         : json['role'].toString();
     final role = UserRole.values.firstWhere(
       (e) => e.name == roleStr,
-      orElse: () => UserRole.student, // Default to student if invalid
+      orElse: () => UserRole.student,
     );
 
-    // Handle name from both 'name' and 'full_name' fields (backend returns 'full_name')
     final name = (json['name'] ?? json['full_name']) as String?;
 
     return User(
@@ -66,10 +85,13 @@ class User {
       name: name,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
-      assignedBusNumber: json['assignedBusNumber'] as String?,
-      assignedBusId: json['assigned_bus_id'] as int?,
+      assignedBusNumber:
+          (json['assignedBusNumber'] ?? json['assigned_bus_number']) as String?,
+      assignedBusId:
+          (json['assigned_bus_id'] ?? json['assignedBusId']) as int?,
       boardingStopId: json['boarding_stop_id'] as int?,
-      pinnedBuses: (json['pinnedBuses'] as List?)?.cast<String>() ?? [],
+      pinnedBuses:
+          _parsePinnedBuses(json['pinned_buses'] ?? json['pinnedBuses']),
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),

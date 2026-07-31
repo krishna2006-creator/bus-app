@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import 'package:agni_college_bus_tracker/services/api_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // Callback types
 typedef NotificationCallback = Future<void> Function(String userId);
@@ -327,7 +328,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // --- Bus Pinning ---
+  // --- Bus Pinning (with FCM topic subscription for push notifications) ---
   Future<void> pinBus(String busNumber) async {
     if (_currentUser == null) return;
     final pinned = List<String>.from(_currentUser!.pinnedBuses);
@@ -335,6 +336,15 @@ class AuthService extends ChangeNotifier {
       pinned.add(busNumber);
       _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
       await updateUser(_currentUser!);
+      // Subscribe to FCM topic for this bus to receive push notifications
+      // when the bus starts tracking, updates location, etc.
+      try {
+        final topic = 'bus_$busNumber';
+        await FirebaseMessaging.instance.subscribeToTopic(topic);
+        debugPrint('Subscribed to FCM topic: $topic');
+      } catch (e) {
+        debugPrint('Failed to subscribe to FCM topic: $e');
+      }
     }
   }
 
@@ -344,6 +354,14 @@ class AuthService extends ChangeNotifier {
     pinned.remove(busNumber);
     _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
     await updateUser(_currentUser!);
+    // Unsubscribe from FCM topic for this bus
+    try {
+      final topic = 'bus_$busNumber';
+      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
+      debugPrint('Unsubscribed from FCM topic: $topic');
+    } catch (e) {
+      debugPrint('Failed to unsubscribe from FCM topic: $e');
+    }
   }
 
   bool isBusPinned(String busNumber) =>
