@@ -85,3 +85,23 @@ class DeviceToken(Base):
     token = Column(String, nullable=False, unique=True)
     platform = Column(String, nullable=True)
     created_at = Column(DateTime, default=func.now())
+
+class PinnedBus(Base):
+    __tablename__ = 'pinned_buses'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False)
+    bus_id = Column(Integer, ForeignKey('buses.id'), nullable=False)
+    bus_number = Column(String, nullable=False)
+    route_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    user = relationship('User', back_populates='pinned_buses')
+    bus = relationship('Bus', back_populates='pinned_by_users')
+
+class NotificationSetting(Base):
+    __tablename__ = 'notification_settings'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False, unique=True)
+    push_enabled = Column(Boolean, default=True)
+    email_enabled = Column(Boolean, default=False)
+    sms_enabled = Column(Boolean, default=False)
+    user = relationship('User', back_populates='notification_settings')
