@@ -199,11 +199,11 @@ class FirebaseService:
             return
 
         try:
-            # Build notification with sound for all platforms
+            # Build notification (sound is NOT supported in messaging.Notification,
+            # only in platform-specific AndroidConfig/APNSConfig)
             notification = messaging.Notification(
                 title=title,
                 body=body,
-                sound=sound,  # Ensures notification plays sound on delivery
             )
             
             # Android config with sound
@@ -244,11 +244,11 @@ class FirebaseService:
         """Send topic-based FCM notification
         Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
         try:
-            # Build notification with sound
+            # Build notification (sound is NOT supported in messaging.Notification,
+            # only in platform-specific AndroidConfig/APNSConfig)
             notification = messaging.Notification(
                 title=title,
                 body=body,
-                sound=sound,  # Ensures notification plays sound on delivery
             )
             
             # Android config with sound
