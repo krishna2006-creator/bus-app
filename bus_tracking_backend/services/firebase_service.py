@@ -12,6 +12,30 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _stringify_data(data: dict = None) -> dict:
+    """
+    Firebase Admin SDK requires all values in the 'data' dict to be strings.
+    Convert any non-string values (int, float, bool, None) to their string representation.
+    """
+    if not data:
+        return {}
+    result = {}
+    for k, v in data.items():
+        if v is None:
+            result[str(k)] = ""
+        elif isinstance(v, bool):
+            result[str(k)] = "true" if v else "false"
+        elif isinstance(v, (int, float)):
+            result[str(k)] = str(v)
+        elif isinstance(v, (dict, list)):
+            import json
+            result[str(k)] = json.dumps(v)
+        else:
+            result[str(k)] = str(v)
+    return result
+
+
 class FirebaseService:
     _instance = None
     _db = None
@@ -193,7 +217,7 @@ class FirebaseService:
         """Send multicast FCM notification using Firebase Admin SDK.
         Uses the service account credentials - NO server key needed.
         Uses MulticastMessage for newer Firebase Admin SDK compatibility.
-        Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
+        Fixed: All data values are converted to strings (Firebase requirement)."""
         if not tokens:
             logger.warning("No tokens provided. Skipping multicast.")
             return
@@ -225,9 +249,12 @@ class FirebaseService:
                 ),
             )
             
+            # Convert all data values to strings (Firebase Admin SDK requirement)
+            string_data = _stringify_data(data)
+            
             multicast_message = messaging.MulticastMessage(
                 notification=notification,
-                data=data or {},
+                data=string_data,
                 tokens=tokens,
                 android=android_config,
                 apns=apns_config,
@@ -242,7 +269,7 @@ class FirebaseService:
     @staticmethod
     def send_topic_notification(topic: str, title: str, body: str, data: Dict = None, sound: str = "default"):
         """Send topic-based FCM notification
-        Fixed: includes sound parameter for delivery to admin, staff, and students with sound."""
+        Fixed: All data values are converted to strings (Firebase requirement)."""
         try:
             # Build notification (sound is NOT supported in messaging.Notification,
             # only in platform-specific AndroidConfig/APNSConfig)
@@ -270,9 +297,12 @@ class FirebaseService:
                 ),
             )
             
+            # Convert all data values to strings (Firebase Admin SDK requirement)
+            string_data = _stringify_data(data)
+            
             message = messaging.Message(
                 notification=notification,
-                data=data or {},
+                data=string_data,
                 topic=topic,
                 android=android_config,
                 apns=apns_config,
