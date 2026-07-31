@@ -51,12 +51,11 @@ services:
       FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FCM_SENDER_ID: ${FCM_SENDER_ID:-}
-      FIREBASE_CREDENTIALS_PATH: /app/serviceAccountKey.json
+      FIREBASE_KEY: ${FIREBASE_KEY}
     ports:
       - "8000:8000"
     volumes:
       - ./bus_tracking_backend:/app
-      - ./bus_tracking_backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
 
 volumes:
   db_data:

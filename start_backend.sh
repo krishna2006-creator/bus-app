@@ -25,32 +25,28 @@ fi
 echo "✓ Docker and Docker Compose installed"
 echo ""
 
+# Load FIREBASE_KEY from firebase-key.json for Docker Compose pass-through
+if [ -f "bus_tracking_backend/firebase-key.json" ]; then
+    export FIREBASE_KEY="$(cat bus_tracking_backend/firebase-key.json)"
+    echo "✓ FIREBASE_KEY loaded from firebase-key.json"
+else
+    echo "⚠ Firebase key file not found at bus_tracking_backend/firebase-key.json"
+    echo "  Set the FIREBASE_KEY environment variable manually before continuing."
+fi
+echo ""
+
 # Check if .env file exists
 if [ ! -f "bus_tracking_backend/.env" ]; then
     echo "Creating .env file from template..."
     cp bus_tracking_backend/.env.example bus_tracking_backend/.env
     echo "✓ .env file created"
     echo ""
-    echo "⚠ Important: Edit bus_tracking_backend/.env with your Firebase credentials:"
-    echo "  - FCM_SERVER_KEY"
-    echo "  - FCM_PROJECT_ID"
-    echo "  - FCM_SENDER_ID"
-    echo "  - FIREBASE_CREDENTIALS_PATH"
+    echo "⚠ Important: Edit bus_tracking_backend/.env with your configuration:"
+    echo "  - SECRET_KEY"
+    echo "  - Database settings (DATABASE_URL)"
+    echo "  - Or set FIREBASE_KEY directly in your shell environment"
     echo ""
     read -p "Press Enter after editing .env file..."
-fi
-
-# Check if serviceAccountKey.json exists
-if [ ! -f "bus_tracking_backend/serviceAccountKey.json" ]; then
-    echo ""
-    echo "⚠ Firebase service account key not found!"
-    echo "  Download from Firebase Console:"
-    echo "  1. Go to Project Settings"
-    echo "  2. Service Accounts tab"
-    echo "  3. 'Generate new private key'"
-    echo "  4. Save as: bus_tracking_backend/serviceAccountKey.json"
-    echo ""
-    read -p "Press Enter after downloading the service account key..."
 fi
 
 # Start Docker Compose

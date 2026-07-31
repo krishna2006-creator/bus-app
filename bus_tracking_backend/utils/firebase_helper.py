@@ -11,11 +11,13 @@ logger = logging.getLogger(__name__)
 
 def get_firebase_credential() -> Optional[credentials.Certificate]:
     """
-    Robust helper to load Firebase credentials from multiple sources:
-    1. FIREBASE_CREDENTIALS_PATH env variable (absolute or relative)
-    2. Local files ('firebase-key.json', 'serviceAccountKey.json')
-    3. FIREBASE_CREDENTIALS_JSON env variable (raw JSON string)
-    4. FIREBASE_CREDENTIALS_BASE64 env variable (base64 encoded JSON string)
+    Robust helper to load Firebase credentials from multiple sources,
+    checked in priority order:
+    1. FIREBASE_KEY env variable (raw JSON string – the user's preferred method)
+    2. FIREBASE_CREDENTIALS_PATH env variable (absolute or relative file path)
+    3. Local files ('firebase-key.json', 'serviceAccountKey.json')
+    4. FIREBASE_CREDENTIALS_JSON env variable (raw JSON string)
+    5. FIREBASE_CREDENTIALS_BASE64 env variable (base64 encoded JSON string)
     """
     backend_dir = Path(__file__).resolve().parent.parent
 
@@ -35,7 +37,23 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
         except Exception as exc:
             logger.warning("Failed to load .env file: %s", exc)
 
-    # 1. Try FIREBASE_CREDENTIALS_PATH
+    # ------------------------------------------------------------------
+    # 1. FIREBASE_KEY – raw JSON content of the service-account key
+    #    This is the user's preferred approach: paste the full
+    #    firebase-key.json content directly into this env variable.
+    # ------------------------------------------------------------------
+    firebase_key_raw = os.getenv("FIREBASE_KEY")
+    if firebase_key_raw:
+        try:
+            creds_data = json.loads(firebase_key_raw)
+            logger.info("Loading Firebase credentials from FIREBASE_KEY env var.")
+            return credentials.Certificate(creds_data)
+        except Exception as exc:
+            logger.error("Failed to parse FIREBASE_KEY env var: %s", exc)
+
+    # ------------------------------------------------------------------
+    # 2. FIREBASE_CREDENTIALS_PATH – file path pointing to a JSON key file
+    # ------------------------------------------------------------------
     creds_path_env = os.getenv("FIREBASE_CREDENTIALS_PATH")
     candidate_paths = []
 
@@ -44,9 +62,18 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
         candidate_paths.append(backend_dir / creds_path_env)
         candidate_paths.append(backend_dir / Path(creds_path_env).name)
 
-    # 2. Standard fallback filenames in backend folder
-    candidate_paths.append(backend_dir / "firebase-key.json")
-    candidate_paths.append(backend_dir / "serviceAccountKey.json")
+    cwd = Path(os.getcwd())
+
+    # 3. All locations where firebase-key.json could exist
+    for fname in ["firebase-key.json", "serviceAccountKey.json"]:
+        candidate_paths += [
+            backend_dir / fname,           # bus_tracking_backend/firebase-key.json
+            cwd / fname,                   # current working directory
+            cwd / "bus_tracking_backend" / fname,
+            Path("/etc/secrets") / fname,  # Render secret files default location
+            Path("/opt/render/project/src") / fname,
+            Path("/opt/render/project/src/bus_tracking_backend") / fname,
+        ]
 
     for path in candidate_paths:
         try:
@@ -56,7 +83,7 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
         except Exception as exc:
             logger.warning("Failed to load Firebase credentials from file %s: %s", path, exc)
 
-    # 3. Check FIREBASE_CREDENTIALS_JSON env var (raw JSON string)
+    # 4. Check FIREBASE_CREDENTIALS_JSON env var (raw JSON string)
     creds_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
     if creds_json_str:
         try:
@@ -66,7 +93,7 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
         except Exception as exc:
             logger.error("Failed to parse FIREBASE_CREDENTIALS_JSON env var: %s", exc)
 
-    # 4. Check FIREBASE_CREDENTIALS_BASE64 env var (base64 string)
+    # 5. Check FIREBASE_CREDENTIALS_BASE64 env var (base64 string)
     creds_b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
     if creds_b64:
         try:
@@ -79,7 +106,10 @@ def get_firebase_credential() -> Optional[credentials.Certificate]:
             logger.error("Failed to parse FIREBASE_CREDENTIALS_BASE64 env var: %s", exc)
 
     logger.error(
-        "No Firebase credentials found! Set FIREBASE_CREDENTIALS_BASE64 in Render environment variables. "
-        "Run: python bus_tracking_backend/print_firebase_b64.py to get the value."
+        "No Firebase credentials found! Set the FIREBASE_KEY environment variable "
+        "with the full JSON content of your firebase-key.json file. "
+        "Alternatively, set FIREBASE_CREDENTIALS_PATH to a key file path, "
+        "FIREBASE_CREDENTIALS_JSON for raw JSON, or FIREBASE_CREDENTIALS_BASE64 "
+        "for a base64-encoded key."
     )
     return None
