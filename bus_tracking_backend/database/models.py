@@ -76,7 +76,8 @@ class PinnedBus(Base):
     )
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), index=True)
-    bus_id = Column(Integer, ForeignKey("buses.id"), index=True)
+    bus_id = Column(Integer, ForeignKey("buses.id"), nullable=True)
+    bus_number = Column(String, nullable=True)
     boarding_stop_id = Column(Integer, ForeignKey("bus_stops.id"), nullable=True)
     pinned_at = Column(DateTime, default=func.now())
 
@@ -85,17 +86,17 @@ class PinnedBus(Base):
     boarding_stop = relationship("BusStop")
 
     @property
-    def bus_number(self) -> Optional[str]:
-        """Delegate to the related Bus so Pydantic schemas (PinnedBusSchema)
-        can serialize without needing a redundant column in the DB."""
+    def effective_bus_number(self) -> Optional[str]:
+        """Return bus_number from DB column if available, otherwise from the Bus relationship."""
+        if self.bus_number:
+            return self.bus_number
         if self.bus:
             return self.bus.bus_number
         return None
 
     @property
-    def route_name(self) -> Optional[str]:
-        """Delegate to the related Bus so Pydantic schemas (PinnedBusSchema)
-        can serialize without needing a redundant column in the DB."""
+    def effective_route_name(self) -> Optional[str]:
+        """Return route_name from the Bus relationship if available."""
         if self.bus:
             return self.bus.route_name
         return None

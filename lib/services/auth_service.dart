@@ -9,7 +9,6 @@ import 'package:agni_college_bus_tracker/services/api_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-// Callback types
 typedef NotificationCallback = Future<void> Function(String userId);
 typedef LogoutCallback = Future<void> Function();
 
@@ -22,7 +21,7 @@ class AuthService extends ChangeNotifier {
   User? _currentUser;
   String? _token;
   NotificationCallback? _onLoginCallback;
-  LogoutCallback? _onLogoutCallback; // CRITICAL FIX: Add logout callback
+  LogoutCallback? _onLogoutCallback;
 
   List<User> get users => _users;
   User? get currentUser => _currentUser;
@@ -33,12 +32,10 @@ class AuthService extends ChangeNotifier {
 
   AuthService(this.navigatorKey);
 
-  // Set callback for notification service reconnection after login
   void setNotificationCallback(NotificationCallback callback) {
     _onLoginCallback = callback;
   }
 
-  // CRITICAL FIX: Set callback for cleanup on logout
   void setLogoutCallback(LogoutCallback callback) {
     _onLogoutCallback = callback;
   }
@@ -46,7 +43,6 @@ class AuthService extends ChangeNotifier {
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Load local users (fallbacks)
     final usersJson = prefs.getString(_usersKey);
     if (usersJson != null) {
       try {
@@ -59,27 +55,22 @@ class AuthService extends ChangeNotifier {
       await _loadDefaultUsers();
     }
 
-    // Load current session and token
     final currentUserJson = prefs.getString(_currentUserKey);
     _token = prefs.getString('auth_token');
 
     if (currentUserJson != null && _token != null) {
       try {
         _currentUser = User.fromJson(json.decode(currentUserJson));
-        debugPrint('✅ Auth: Loaded user ${_currentUser?.id} with ${_currentUser?.pinnedBuses.length} pinned buses');
+        debugPrint('Auth: Loaded user ${_currentUser?.id} with ${_currentUser?.pinnedBuses.length} pinned buses');
 
-        // CRITICAL FIX: Keep local session even if network fails.
-        // Only logout if the token is explicitly rejected (401).
-        // Network errors or server issues should NOT force a logout.
         final result = await fetchMe();
         if (result == 'expired') {
-          debugPrint('⚠️ Auth: Token expired, clearing session');
+          debugPrint('Auth: Token expired, clearing session');
           await logout();
         } else if (result == 'ok') {
-          debugPrint('✅ Auth: Session valid, user authenticated');
+          debugPrint('Auth: Session valid, user authenticated');
         } else {
-          debugPrint('⚠️ Auth: Network error, keeping local session (offline mode)');
-          // Token still valid locally - don't logout
+          debugPrint('Auth: Network error, keeping local session (offline mode)');
         }
       } catch (e) {
         debugPrint('Error loading current user session: $e');
@@ -89,23 +80,10 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _loadDefaultUsers() async {
-    // Default admin and staff for initial local testing
     _users = [
-      User(
-          id: 'admin001',
-          password: 'admin@123',
-          role: UserRole.admin,
-          name: 'System Admin'),
-      User(
-          id: 'staff001',
-          password: 'staff@123',
-          role: UserRole.staff,
-          name: 'Staff Member'),
-      User(
-          id: 'stu001',
-          password: 'stu@123',
-          role: UserRole.student,
-          name: 'Student'),
+      User(id: 'admin001', password: 'admin@123', role: UserRole.admin, name: 'System Admin'),
+      User(id: 'staff001', password: 'staff@123', role: UserRole.staff, name: 'Staff Member'),
+      User(id: 'stu001', password: 'stu@123', role: UserRole.student, name: 'Student'),
     ];
     await _saveUsers();
   }
@@ -127,211 +105,149 @@ class AuthService extends ChangeNotifier {
     if (_currentUser?.id == oldId) {
       _currentUser = updated;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-          _currentUserKey, json.encode(_currentUser!.toJson()));
+      await prefs.setString(_currentUserKey, json.encode(_currentUser!.toJson()));
     }
     notifyListeners();
   }
 
-  /// LOGIN logic connected to Backend
-  /// Returns tuple: (success, errorMessage)
   Future<Map<String, dynamic>> login(String identifier, String password) async {
     try {
-      debugPrint('🔐 LOGIN: Starting login for identifier: $identifier');
+      debugPrint('LOGIN: Starting login for identifier: $identifier');
 
-      // 1. Check local users first (for pre-defined admin/staff)
-      final localUsers = _users
-          .where((u) => u.id == identifier && u.password == password)
-          .toList();
+      final localUsers = _users.where((u) => u.id == identifier && u.password == password).toList();
 
       if (localUsers.isNotEmpty) {
-        debugPrint('✅ LOGIN: Local user found - $identifier');
+        debugPrint('LOGIN: Local user found - $identifier');
         _currentUser = localUsers.first;
-        debugPrint('✅ LOGIN: User has ${_currentUser!.pinnedBuses.length} pinned buses');
+        debugPrint('LOGIN: User has ${_currentUser!.pinnedBuses.length} pinned buses');
       } else {
-        // For backend users, fetch profile to get pinned buses
         return await _loginWithBackend(identifier, password);
       }
 
-      // For local users, also try to login with backend if available
-      // But if network fails, still allow login with local data
       try {
         final backendResult = await _loginWithBackend(identifier, password);
         if (backendResult['success'] == true) {
-          debugPrint('✅ LOGIN: Backend login successful');
+          debugPrint('LOGIN: Backend login successful');
           return backendResult;
         }
       } catch (e) {
-        debugPrint('⚠️ LOGIN: Backend unavailable, using local auth');
+        debugPrint('LOGIN: Backend unavailable, using local auth');
       }
 
-      // If backend login fails but local user exists, still allow login
-      // but don't set token (will be null)
       return {'success': true, 'message': 'Logged in successfully (offline mode)'};
-    } on SocketException catch (e) {
-      debugPrint('❌ LOGIN: Network error - $e');
-      return {
-        'success': false,
-        'message': 'No internet connection or server unreachable'
-      };
-    } on TimeoutException catch (e) {
-      debugPrint('❌ LOGIN: Request timeout - $e');
-      return {
-        'success': false,
-        'message': 'Request timeout - server not responding'
-      };
     } catch (e) {
-      debugPrint('❌ LOGIN: Unexpected error - $e');
+      debugPrint('LOGIN: Error - $e');
       return {'success': false, 'message': 'Login failed: ${e.toString()}'};
     }
   }
 
-  Future<Map<String, dynamic>> _loginWithBackend(
-      String identifier, String password) async {
-    debugPrint(
-        '🔐 LOGIN: Attempting backend login at ${ApiService.baseUrl}/auth/login');
+  Future<Map<String, dynamic>> _loginWithBackend(String identifier, String password) async {
+    debugPrint('LOGIN: Attempting backend login at ${ApiService.baseUrl}/auth/login');
     try {
       final response = await http.post(
         Uri.parse('${ApiService.baseUrl}/auth/login'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'username': identifier,
-          'password': password,
-        },
+        body: {'username': identifier, 'password': password},
       ).timeout(const Duration(seconds: 10));
 
-      debugPrint('🔐 LOGIN: Backend response status: ${response.statusCode}');
-      debugPrint('🔐 LOGIN: Backend response body: ${response.body}');
+      debugPrint('LOGIN: Backend response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         try {
           final data = json.decode(response.body);
           _token = data['access_token'];
-          debugPrint('✅ LOGIN: Token received: ${_token?.substring(0, 20)}...');
+          debugPrint('LOGIN: Token received');
 
-          // Store token in SharedPreferences for persistence
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', _token!);
 
-          // Fetch user profile after login
           final fetchResult = await fetchMe();
           if (fetchResult == 'ok') {
             return {'success': true, 'message': 'Logged in successfully'};
           } else if (fetchResult == 'expired') {
-            return {
-              'success': false,
-              'message': 'Token expired, please login again'
-            };
+            return {'success': false, 'message': 'Token expired, please login again'};
           } else {
-            // Network error - keep token and try with cached local data
-            debugPrint('⚠️ LOGIN: Network error during fetchMe, keeping token');
+            debugPrint('LOGIN: Network error during fetchMe, keeping token');
             return {'success': true, 'message': 'Logged in successfully (offline mode)'};
           }
         } catch (e) {
-          debugPrint('❌ LOGIN: Error parsing token response: $e');
-          return {
-            'success': false,
-            'message': 'Invalid server response format'
-          };
+          debugPrint('LOGIN: Error parsing token response: $e');
+          return {'success': false, 'message': 'Invalid server response format'};
         }
       } else if (response.statusCode == 401) {
-        debugPrint('❌ LOGIN: Invalid credentials');
+        debugPrint('LOGIN: Invalid credentials');
         return {'success': false, 'message': 'Invalid ID or password'};
       } else {
-        debugPrint('❌ LOGIN: Server error - ${response.statusCode}');
-        return {
-          'success': false,
-          'message':
-              'Server error (${response.statusCode}). Make sure backend is running at ${ApiService.baseUrl}'
-        };
+        debugPrint('LOGIN: Server error - ${response.statusCode}');
+        return {'success': false, 'message': 'Server error (${response.statusCode})'};
       }
-    } on SocketException catch (e) {
-      debugPrint('❌ LOGIN: Network error - $e');
-      return {
-        'success': false,
-        'message': 'No internet connection or server unreachable'
-      };
-    } on TimeoutException catch (e) {
-      debugPrint('❌ LOGIN: Request timeout - $e');
-      return {
-        'success': false,
-        'message': 'Request timeout - server not responding'
-      };
     } catch (e) {
-      debugPrint('❌ LOGIN: Unexpected error - $e');
+      debugPrint('LOGIN: Error - $e');
       return {'success': false, 'message': 'Login failed: ${e.toString()}'};
     }
   }
 
-  /// Returns 'ok' if user loaded, 'expired' if token invalid, 'offline' if network error
   Future<String> fetchMe() async {
     try {
       if (_token == null) {
-        debugPrint('❌ FETCHME: No token available');
+        debugPrint('FETCHME: No token available');
         return 'expired';
       }
 
-      debugPrint(
-          '🔐 FETCHME: Fetching user profile from ${ApiService.baseUrl}/auth/me');
+      debugPrint('FETCHME: Fetching user profile from ${ApiService.baseUrl}/auth/me');
 
       final response = await http.get(
         Uri.parse('${ApiService.baseUrl}/auth/me'),
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $_token', 'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 10));
 
-      debugPrint('🔐 FETCHME: Response status: ${response.statusCode}');
-      debugPrint('🔐 FETCHME: Response body: ${response.body}');
+      debugPrint('FETCHME: Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         try {
           final userData = json.decode(response.body);
-          _currentUser = User.fromJson(userData);
-          debugPrint('✅ FETCHME: User loaded - ${_currentUser?.id}');
+          final backendUser = User.fromJson(userData);
+
+          // CRITICAL FIX: Preserve local pinned buses so they are not lost
+          final localPinned = _currentUser?.pinnedBuses ?? [];
+          final backendPinned = backendUser.pinnedBuses;
+          final mergedPinned = <String>{...localPinned, ...backendPinned}.toList();
+
+          _currentUser = backendUser.copyWith(pinnedBuses: mergedPinned);
+          debugPrint('FETCHME: User loaded - ${_currentUser?.id} with ${_currentUser?.pinnedBuses.length} pinned buses');
 
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(
-              _currentUserKey, json.encode(_currentUser!.toJson()));
+          await prefs.setString(_currentUserKey, json.encode(_currentUser!.toJson()));
           await prefs.setString(lastRoleKey, _currentUser!.role.name);
           notifyListeners();
 
-          // Notify notification service to reconnect with new token and user ID
           if (_onLoginCallback != null && _currentUser != null) {
             try {
               await _onLoginCallback!(_currentUser!.id);
             } catch (e) {
-              debugPrint('⚠️ FETCHME: Error calling notification callback: $e');
+              debugPrint('FETCHME: Error calling notification callback: $e');
             }
           }
 
           return 'ok';
         } catch (e) {
-          debugPrint('❌ FETCHME: Error parsing user data: $e');
+          debugPrint('FETCHME: Error parsing user data: $e');
           return 'offline';
         }
       } else if (response.statusCode == 401) {
-        debugPrint('❌ FETCHME: Token invalid or expired');
+        debugPrint('FETCHME: Token invalid or expired');
         return 'expired';
       } else {
-        debugPrint('❌ FETCHME: Server error - ${response.statusCode}');
+        debugPrint('FETCHME: Server error - ${response.statusCode}');
         return 'offline';
       }
-    } on SocketException catch (e) {
-      debugPrint('❌ FETCHME: Network error - $e');
-      return 'offline';
-    } on TimeoutException catch (e) {
-      debugPrint('❌ FETCHME: Request timeout - $e');
-      return 'offline';
     } catch (e) {
-      debugPrint('❌ FETCHME: Unexpected error - $e');
+      debugPrint('FETCHME: Error - $e');
       return 'offline';
     }
   }
 
   Future<void> logout([BuildContext? ctx]) async {
-    // CRITICAL FIX: Call logout callback before clearing user
     if (_onLogoutCallback != null) {
       await _onLogoutCallback!();
     }
@@ -352,7 +268,6 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // --- Bus Pinning (with FCM topic subscription for push notifications) ---
   Future<void> pinBus(String busNumber) async {
     if (_currentUser == null) return;
     final pinned = List<String>.from(_currentUser!.pinnedBuses);
@@ -361,19 +276,17 @@ class AuthService extends ChangeNotifier {
       _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
       await updateUser(_currentUser!);
 
-      // CRITICAL FIX: Persist pinned bus to backend so it survives app restart
       try {
         final success = await ApiService.pinBusByNumber(busNumber);
         if (success) {
-          debugPrint('✅ Pinned bus $busNumber saved to backend');
+          debugPrint('Pinned bus $busNumber saved to backend');
         } else {
-          debugPrint('⚠️ Failed to save pinned bus to backend, using local storage');
+          debugPrint('Failed to save pinned bus to backend, using local storage');
         }
       } catch (e) {
-        debugPrint('⚠️ Backend pin save failed: $e');
+        debugPrint('Backend pin save failed: $e');
       }
 
-      // Subscribe to FCM topic for this bus to receive push notifications
       try {
         final topic = 'bus_$busNumber';
         await FirebaseMessaging.instance.subscribeToTopic(topic);
@@ -391,17 +304,15 @@ class AuthService extends ChangeNotifier {
     _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
     await updateUser(_currentUser!);
 
-    // CRITICAL FIX: Remove pinned bus from backend
     try {
       final success = await ApiService.unpinBusByNumber(busNumber);
       if (success) {
-        debugPrint('✅ Unpinned bus $busNumber from backend');
+        debugPrint('Unpinned bus $busNumber from backend');
       }
     } catch (e) {
-      debugPrint('⚠️ Backend unpin failed: $e');
+      debugPrint('Backend unpin failed: $e');
     }
 
-    // Unsubscribe from FCM topic for this bus
     try {
       final topic = 'bus_$busNumber';
       await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
@@ -411,8 +322,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  bool isBusPinned(String busNumber) =>
-      _currentUser?.pinnedBuses.contains(busNumber) ?? false;
+  bool isBusPinned(String busNumber) => _currentUser?.pinnedBuses.contains(busNumber) ?? false;
 
   Future<void> updateUser(User user) async {
     final prefs = await SharedPreferences.getInstance();

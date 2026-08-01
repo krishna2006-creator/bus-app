@@ -92,7 +92,8 @@ def _migrate_columns():
                         CREATE TABLE IF NOT EXISTS pinned_buses (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             user_id VARCHAR NOT NULL,
-                            bus_id INTEGER NOT NULL,
+                            bus_id INTEGER,
+                            bus_number VARCHAR,
                             boarding_stop_id INTEGER,
                             pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY(user_id) REFERENCES users(id),
@@ -104,6 +105,16 @@ def _migrate_columns():
                 print("Created pinned_buses table")
             except Exception as exc:
                 print(f"pinned_buses table creation failed: {exc}")
+        elif 'pinned_buses' in table_names:
+            # Add bus_number column to existing pinned_buses table
+            pinned_columns = {col['name'] for col in inspector.get_columns('pinned_buses')}
+            if 'bus_number' not in pinned_columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE pinned_buses ADD COLUMN bus_number VARCHAR"))
+                        print("Added bus_number column to pinned_buses table")
+                except Exception as exc:
+                    print(f"bus_number column migration skipped/failed: {exc}")
 
         if 'users' in table_names:
             columns = {col['name'] for col in inspector.get_columns('users')}

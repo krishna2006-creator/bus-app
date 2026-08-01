@@ -16,9 +16,9 @@ class UserLogin(BaseModel):
     password: str
 
 class PinnedBusSchema(BaseModel):
-    bus_id: int
+    bus_id: Optional[int] = None
     bus_number: str
-    route_name: str
+    route_name: Optional[str] = None
 
     class Config:
         from_attributes = True

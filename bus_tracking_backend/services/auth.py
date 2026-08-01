@@ -105,6 +105,7 @@ async def read_users_me(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Flatten the result for the schema response
+    # Use effective_bus_number which falls back to the stored bus_number column
     response_data = {
         "id": user.id,
         "email": user.email,
@@ -116,9 +117,9 @@ async def read_users_me(
         "phone": user.phone,
         "pinned_buses": [
             {
-                "bus_id": p.bus.id,
-                "bus_number": p.bus.bus_number,
-                "route_name": p.bus.route_name
+                "bus_id": p.bus_id if p.bus_id else p.bus.id if p.bus else None,
+                "bus_number": p.effective_bus_number or p.bus_number,
+                "route_name": p.effective_route_name
             } for p in user.pinned_buses
         ]
     }

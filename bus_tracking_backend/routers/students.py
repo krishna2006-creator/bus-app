@@ -37,7 +37,8 @@ def read_student_me(
         joinedload(models.User.pinned_buses).joinedload(models.PinnedBus.bus)
     ).first()
 
-    # Flatten the result for the schema
+    # Flatten the result for the schema, using effective_bus_number
+    # which falls back to the stored bus_number column if the Bus relationship is None
     response_data = {
         "id": user.id,
         "email": user.email,
@@ -46,9 +47,9 @@ def read_student_me(
         "boarding_stop_id": user.boarding_stop_id,
         "pinned_buses": [
             {
-                "bus_id": p.bus.id,
-                "bus_number": p.bus.bus_number,
-                "route_name": p.bus.route_name
+                "bus_id": p.bus_id if p.bus_id else p.bus.id if p.bus else None,
+                "bus_number": p.effective_bus_number or p.bus_number,
+                "route_name": p.effective_route_name
             } for p in user.pinned_buses
         ]
     }
@@ -128,29 +129,28 @@ def pin_bus(
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Pin a bus by bus number. The bus must exist in the system.
-    Returns the pinned bus details.
+    Pin a bus by bus number. Works even if the bus is not in the buses table,
+    storing the bus_number directly for persistence.
     """
     bus = db.query(models.Bus).filter(models.Bus.bus_number == req.bus_number).first()
-    if not bus:
-        raise HTTPException(status_code=404, detail=f"Bus {req.bus_number} not found")
 
-    # Check if already pinned to avoid duplicates
+    # Check if already pinned by bus_number (handles both bus_id and bus_number matching)
     existing = db.query(models.PinnedBus).filter(
         models.PinnedBus.user_id == current_user.id,
-        models.PinnedBus.bus_id == bus.id
+        models.PinnedBus.bus_number == req.bus_number
     ).first()
     if existing:
         return {"status": "already_pinned", "bus_number": req.bus_number}
 
     pinned = models.PinnedBus(
         user_id=current_user.id,
-        bus_id=bus.id,
+        bus_id=bus.id if bus else None,
+        bus_number=req.bus_number,
     )
     db.add(pinned)
     db.commit()
     db.refresh(pinned)
-    return {"status": "pinned", "bus_number": req.bus_number, "bus_id": bus.id}
+    return {"status": "pinned", "bus_number": req.bus_number, "bus_id": bus.id if bus else None}
 
 @router.post("/unpin-bus")
 def unpin_bus(
@@ -160,18 +160,16 @@ def unpin_bus(
 ):
     """
     Unpin a bus by bus number for the current user.
+    Works even if the bus is not in the buses table.
     """
-    bus = db.query(models.Bus).filter(models.Bus.bus_number == req.bus_number).first()
-    if not bus:
-        raise HTTPException(status_code=404, detail=f"Bus {req.bus_number} not found")
-
+    # Find by bus_number directly (works whether or not bus exists)
     pinned = db.query(models.PinnedBus).filter(
         models.PinnedBus.user_id == current_user.id,
-        models.PinnedBus.bus_id == bus.id
+        models.PinnedBus.bus_number == req.bus_number
     ).first()
     if not pinned:
         return {"status": "not_pinned", "bus_number": req.bus_number}
 
     db.delete(pinned)
     db.commit()
-    return {"status": "unpinned", "bus_number": req.bus_number, "bus_id": bus.id}
+    return {"status": "unpinned", "bus_number": req.bus_number}
