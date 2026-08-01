@@ -11,6 +11,7 @@ import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
 import 'package:agni_college_bus_tracker/widgets/dashboard_tracking_widget.dart';
+import 'package:agni_college_bus_tracker/screens/admin/admin_live_tracking_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -399,7 +400,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         const Text("Live Tracking",
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        const DashboardTrackingWidget(),
+        const AdminLiveTrackingScreen(),
         const SizedBox(height: 16),
       ],
     );
@@ -421,7 +422,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: FlutterMap(
               options: MapOptions(
                 initialCenter: selectedStop?.location ??
-                    const LatLng(12.8446, 80.2146), // College
+                    const LatLng(12.836371, 80.222332), // College
                 initialZoom: 13,
                 interactionOptions:
                     const InteractionOptions(flags: InteractiveFlag.none),
@@ -433,7 +434,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     userAgentPackageName: 'com.busappvictory.app'),
                 MarkerLayer(markers: [
                   const Marker(
-                      point: LatLng(12.8446, 80.2146),
+                      point: LatLng(12.836371, 80.222332),
                       child: Icon(Icons.school, color: Colors.red, size: 35)),
                   if (selectedStop != null)
                     Marker(

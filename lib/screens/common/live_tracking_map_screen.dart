@@ -84,7 +84,7 @@ class _LiveTrackingMapScreenState extends State<LiveTrackingMapScreen> {
   }
 
   void _startAutoRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _isAutoRefresh) {
         _updateMapElements();
       }

@@ -245,9 +245,9 @@ class PinnedBusMonitorService extends ChangeNotifier {
     final notification = AppNotification(
       id: 'bus_started_${busNumber}_${DateTime.now().millisecondsSinceEpoch}',
       userId: user.id,
-      title: 'Bus $busNumber Started',
-      message: 'Bus $busNumber has started sharing location',
-      category: 'BUS_STARTED',
+      title: 'Bus $busNumber Pinned',
+      message: 'Bus $busNumber is now tracking your location',
+      category: 'BUS_PINNED',
       notificationType: 'location_started',
       targetScreen: '/track-bus-maps',
       createdAt: DateTime.now(),

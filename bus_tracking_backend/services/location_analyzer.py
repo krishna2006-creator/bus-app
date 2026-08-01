@@ -19,9 +19,9 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 # Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
-# Coordinates: 12°50'56"N 80°11'38"E
-COLLEGE_LATITUDE = 12.8489
-COLLEGE_LONGITUDE = 80.1939
+# Coordinates: 12.836371, 80.222332
+COLLEGE_LATITUDE = 12.836371
+COLLEGE_LONGITUDE = 80.222332
 
 
 class LocationAnalyzer:

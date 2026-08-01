@@ -435,7 +435,7 @@ class StopPredictionProvider with ChangeNotifier {
       final headers = await ApiService.getHeaders();
       // REDESIGN: Use new endpoint that accepts any GPS coordinates
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/predictions/eta?stop_id=$stopId'),
+        Uri.parse('${ApiService.baseUrl}/predictions?stop_id=$stopId'),
         headers: headers,
       );
 

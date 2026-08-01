@@ -8,6 +8,7 @@ import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
 import 'package:agni_college_bus_tracker/widgets/dashboard_tracking_widget.dart';
+import 'package:agni_college_bus_tracker/screens/admin/admin_live_tracking_screen.dart';
 import 'package:agni_college_bus_tracker/widgets/pop_scope.dart';
 
 class StaffDashboard extends StatefulWidget {
@@ -123,7 +124,7 @@ class _StaffDashboardState extends State<StaffDashboard> {
         ),
         body: Column(
           children: [
-            const DashboardTrackingWidget(),
+            const AdminLiveTrackingScreen(),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(12),

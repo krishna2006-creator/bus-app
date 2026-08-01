@@ -8,8 +8,8 @@ from bus_tracking_backend.database import models
 from bus_tracking_backend.utils.auth_utils import get_password_hash
 from sqlalchemy import inspect, text
 
-COLLEGE_LATITUDE = 12.8489
-COLLEGE_LONGITUDE = 80.1939
+COLLEGE_LATITUDE = 12.836371
+COLLEGE_LONGITUDE = 80.222332
 
 def get_stop_coordinates(stop_name):
     coordinates = {
