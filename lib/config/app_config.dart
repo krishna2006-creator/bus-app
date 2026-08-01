@@ -31,9 +31,9 @@ class AppConfig {
 
   // Map Configuration
   // Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130
-  // Correct Coordinates: 12.836371, 80.222332
-  static const double collegeLatitude = 12.836371;
-  static const double collegeLongitude = 80.222332;
+  // Correct Coordinates: 12.848476, 80.194434 (Agni College of Technology)
+  static const double collegeLatitude = 12.848476;
+  static const double collegeLongitude = 80.194434;
   static const String collegeName =
       'Agni College of Technology, Old Mahabalipuram Road, Thalambur, Chennai – 600130';
 

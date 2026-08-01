@@ -141,16 +141,12 @@ void main() async {
     authService,
   );
   
-  // CRITICAL FIX: Start monitoring if user is logged in with pinned buses
+  // CRITICAL FIX: Always start monitoring for a logged-in user at launch. The
+  // monitor is a cheap no-op when there are no pinned buses, but keeping it
+  // running means a bus pinned later in the session is detected within ~1s.
   if (authService.currentUser != null) {
-    final pinnedBuses = authService.currentUser!.pinnedBuses;
-    debugPrint('🚌 Main: User has ${pinnedBuses.length} pinned buses: $pinnedBuses');
-    if (pinnedBuses.isNotEmpty) {
-      debugPrint('🚌 Main: Starting pinned bus monitoring');
-      pinnedBusMonitorService.startMonitoring();
-    } else {
-      debugPrint('🚌 Main: No pinned buses to monitor');
-    }
+    debugPrint('🚌 Main: Starting pinned bus monitoring at launch');
+    pinnedBusMonitorService.startMonitoring();
   } else {
     debugPrint('🚌 Main: No user logged in on startup');
   }
@@ -160,13 +156,20 @@ void main() async {
     pinnedBusMonitorService.stopMonitoring();
   });
   
-  // CRITICAL FIX: Add login callback to restart monitoring after login
+  // CRITICAL FIX: Single merged post-login callback. The old code registered
+  // TWO setNotificationCallback calls; the second overwrote the first, so the
+  // notification-service reconnect after login was silently dropped. Both jobs
+  // (reconnect notifications + (re)start pinned-bus monitoring) live here now.
   authService.setNotificationCallback((userId) async {
-    debugPrint('🚌 Main: Login callback - restarting monitoring for user $userId');
-    // Wait a bit for user data to load from backend
+    debugPrint('🔄 Main: post-login callback for user $userId');
+    try {
+      await notificationService.reconnectAfterLogin(userId);
+    } catch (e) {
+      debugPrint('⚠️ Main: notification reconnect failed: $e');
+    }
     await Future.delayed(const Duration(milliseconds: 500));
-    if (authService.currentUser != null && authService.currentUser!.pinnedBuses.isNotEmpty) {
-      debugPrint('🚌 Main: Starting monitoring for ${authService.currentUser!.pinnedBuses.length} pinned buses');
+    if (authService.currentUser != null) {
+      debugPrint('🌙 Main: (Re)starting pinned bus monitoring for user $userId');
       pinnedBusMonitorService.startMonitoring();
     }
   });

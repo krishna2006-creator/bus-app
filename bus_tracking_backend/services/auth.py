@@ -2,11 +2,11 @@ import logging
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 
 from ..database.database import get_db
-from ..database import crud
+from ..database import crud, models
 from ..schemas import user as user_schemas
 from ..schemas import token as token_schemas
 from ..utils.auth_utils import authenticate_user, create_access_token, get_password_hash, get_current_user
@@ -91,6 +91,35 @@ async def login(request: Request, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=user_schemas.User)
-async def read_users_me(current_user: user_schemas.User = Depends(get_current_user)):
+async def read_users_me(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """Returns the currently logged in user's profile info."""
-    return current_user
+    # Eagerly load pinned buses and their associated bus details
+    user = db.query(models.User).filter(models.User.id == current_user.id).options(
+        joinedload(models.User.pinned_buses).joinedload(models.PinnedBus.bus)
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Flatten the result for the schema response
+    response_data = {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "boarding_stop_id": user.boarding_stop_id,
+        "assigned_bus_id": user.assigned_bus_id,
+        "assigned_bus_number": user.assigned_bus_number,
+        "phone": user.phone,
+        "pinned_buses": [
+            {
+                "bus_id": p.bus.id,
+                "bus_number": p.bus.bus_number,
+                "route_name": p.bus.route_name
+            } for p in user.pinned_buses
+        ]
+    }
+    return response_data

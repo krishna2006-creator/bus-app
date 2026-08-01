@@ -9,6 +9,7 @@ import 'package:agni_college_bus_tracker/services/location_service.dart';
 import 'package:agni_college_bus_tracker/providers/stop_prediction_provider.dart';
 import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
+import 'package:agni_college_bus_tracker/config/app_config.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
 import 'package:agni_college_bus_tracker/screens/admin/admin_live_tracking_screen.dart';
 
@@ -292,7 +293,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             icon: const Icon(Icons.track_changes,
                                 color: Colors.redAccent),
                             onPressed: () =>
-                                context.push('/track-bus-maps', extra: bus)),
+                                context.push('/admin/track-bus', extra: bus)),
                         IconButton(
                             icon: const Icon(Icons.location_on,
                                 color: Colors.green),
@@ -399,7 +400,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
         const Text("Live Tracking",
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        const AdminLiveTrackingScreen(),
+        // Lightweight map (same admin live tracking) WITHOUT a nested Scaffold,
+        // so there is no double screen or lag inside the dashboard scroll view.
+        AdminLiveTrackingMapView(
+          showOnlyPinnedBuses: false,
+          showStatusBar: true,
+          showPinnedStatus: true,
+          mapHeight: 240,
+        ),
         const SizedBox(height: 16),
       ],
     );
@@ -421,7 +429,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: FlutterMap(
               options: MapOptions(
                 initialCenter: selectedStop?.location ??
-                    const LatLng(12.836371, 80.222332), // College
+                    const LatLng(AppConfig.collegeLatitude,
+                        AppConfig.collegeLongitude), // College
                 initialZoom: 13,
                 interactionOptions:
                     const InteractionOptions(flags: InteractiveFlag.none),
@@ -433,7 +442,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     userAgentPackageName: 'com.busappvictory.app'),
                 MarkerLayer(markers: [
                   const Marker(
-                      point: LatLng(12.836371, 80.222332),
+                      point: LatLng(AppConfig.collegeLatitude,
+                          AppConfig.collegeLongitude),
                       child: Icon(Icons.school, color: Colors.red, size: 35)),
                   if (selectedStop != null)
                     Marker(

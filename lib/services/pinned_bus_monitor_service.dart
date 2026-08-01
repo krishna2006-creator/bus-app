@@ -37,14 +37,21 @@ class PinnedBusMonitorService extends ChangeNotifier {
   Map<String, PinnedBusTrackingData> get trackingData => _trackingData;
 
   void startMonitoring() {
-    debugPrint('🚌 PinnedBusMonitor: Starting monitoring service');
+    // CRITICAL FIX: Avoid stacking multiple timers when startMonitoring is
+    // called repeatedly (e.g. on each login / pin action). Only one tick
+    // thread should ever run.
+    if (_monitorTimer?.isActive ?? false) {
+      debugPrint('🌙 PinnedBusMonitor: Already monitoring, ignoring start');
+      return;
+    }
+    debugPrint('🌙 PinnedBusMonitor: Starting monitoring service');
     _updateBoardingStopLocation().then((_) {
       debugPrint('🚌 PinnedBusMonitor: Boarding stop location updated');
     }).catchError((e) {
       debugPrint('🚌 PinnedBusMonitor: Error updating boarding stop: $e');
     });
     
-    _monitorTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _monitorTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _checkPinnedBuses();
     });
     
@@ -52,7 +59,7 @@ class PinnedBusMonitorService extends ChangeNotifier {
       _updateBoardingStopLocation();
     });
     
-    debugPrint('🚌 PinnedBusMonitor: Monitoring started, checking every 3 seconds');
+    debugPrint('🌙 PinnedBusMonitor: Monitoring started, checking every 1 second');
   }
 
   void stopMonitoring() {

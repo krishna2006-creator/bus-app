@@ -37,7 +37,10 @@ class _TrackBusPageState extends State<TrackBusPage> {
   bool _isOffline = true;
 
   // College coordinates (Final destination)
-  static const LatLng _collegeLocation = LatLng(12.8446, 80.2146);
+  static const LatLng _collegeLocation = LatLng(
+    AppConfig.collegeLatitude,
+    AppConfig.collegeLongitude,
+  );
 
   @override
   void initState() {

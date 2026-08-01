@@ -144,7 +144,10 @@ class _StaffTrackingPageState extends State<StaffTrackingPage> {
               options: MapOptions(
                 initialCenter: _busPositions.isNotEmpty
                     ? _busPositions.values.first
-                    : const LatLng(12.8446, 80.2146),
+                    : const LatLng(
+                        AppConfig.collegeLatitude,
+                        AppConfig.collegeLongitude,
+                      ),
                 initialZoom: 15,
               ),
               children: [

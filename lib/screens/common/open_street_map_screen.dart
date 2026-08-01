@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:go_router/go_router.dart';
+import 'package:agni_college_bus_tracker/config/app_config.dart';
 import '../../services/api_service.dart';
 
 class OpenStreetMapScreen extends StatefulWidget {
@@ -16,8 +17,8 @@ class OpenStreetMapScreen extends StatefulWidget {
   const OpenStreetMapScreen({
     super.key,
     // Default coordinates (Update these to your college location)
-    this.latitude = 12.9716,
-    this.longitude = 77.5946,
+    this.latitude = AppConfig.collegeLatitude,
+    this.longitude = AppConfig.collegeLongitude,
     this.speed = 0.0,
     this.title = 'Live Location',
     this.busId,
@@ -43,7 +44,8 @@ class _OpenStreetMapScreenState extends State<OpenStreetMapScreen>
   bool _isSelectingPickup = true; // Track if user is in selection mode
 
     // Agni College of Technology, Thalambur, Chennai
-    final LatLng _collegeLocation = const LatLng(12.836371, 80.222332);
+    final LatLng _collegeLocation = const LatLng(
+        AppConfig.collegeLatitude, AppConfig.collegeLongitude);
 
   @override
   void initState() {

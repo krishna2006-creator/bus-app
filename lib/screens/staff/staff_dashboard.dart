@@ -123,7 +123,10 @@ class _StaffDashboardState extends State<StaffDashboard> {
         ),
         body: Column(
           children: [
-            const AdminLiveTrackingScreen(),
+            const AdminLiveTrackingMapView(
+              showPinnedStatus: true,
+              mapHeight: 220,
+            ),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(12),
@@ -256,7 +259,7 @@ class _StaffDashboardState extends State<StaffDashboard> {
                               icon: const Icon(Icons.track_changes,
                                   color: Colors.redAccent),
                               onPressed: () =>
-                                  context.push('/staff/track-bus', extra: bus),
+                                  context.push('/admin/track-bus', extra: bus),
                             ),
                             IconButton(
                               icon: Icon(

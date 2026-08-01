@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import 'package:agni_college_bus_tracker/config/app_config.dart';
 import 'package:agni_college_bus_tracker/models/prediction_models.dart';
 import 'package:agni_college_bus_tracker/providers/stop_prediction_provider.dart';
 
@@ -111,7 +112,7 @@ class _StopPredictionPageState extends State<StopPredictionPage> {
             mapController: _mapController,
             options: MapOptions(
               initialCenter:
-                  activeStop?.location ?? const LatLng(12.8446, 80.2146),
+                  activeStop?.location ?? const LatLng(AppConfig.collegeLatitude, AppConfig.collegeLongitude),
               initialZoom: 13,
               onTap: (_, __) => FocusScope.of(context).unfocus(),
             ),
@@ -123,7 +124,7 @@ class _StopPredictionPageState extends State<StopPredictionPage> {
               MarkerLayer(
                 markers: [
                   const Marker(
-                    point: LatLng(12.8446, 80.2146),
+                    point: LatLng(AppConfig.collegeLatitude, AppConfig.collegeLongitude),
                     child: Icon(Icons.school, color: Colors.red, size: 40),
                   ),
                   if (activeStop != null)
