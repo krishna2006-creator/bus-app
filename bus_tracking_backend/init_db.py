@@ -82,7 +82,30 @@ def get_stop_coordinates(stop_name):
 def _migrate_columns():
     try:
         inspector = inspect(engine)
-        if 'users' in inspector.get_table_names():
+        table_names = inspector.get_table_names()
+
+        # Ensure pinned_buses table exists
+        if 'pinned_buses' not in table_names:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS pinned_buses (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id VARCHAR NOT NULL,
+                            bus_id INTEGER NOT NULL,
+                            boarding_stop_id INTEGER,
+                            pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY(user_id) REFERENCES users(id),
+                            FOREIGN KEY(bus_id) REFERENCES buses(id),
+                            UNIQUE(user_id, bus_id)
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pinned_user_bus ON pinned_buses(user_id, bus_id)"))
+                print("Created pinned_buses table")
+            except Exception as exc:
+                print(f"pinned_buses table creation failed: {exc}")
+
+        if 'users' in table_names:
             columns = {col['name'] for col in inspector.get_columns('users')}
             if 'bus_room_id' not in columns:
                 try:
