@@ -115,3 +115,63 @@ async def get_student_predictions(
         return bus_schemas.PredictionResponse(**prediction["payload"]) # prediction is a dict with "payload" key
     
     return None
+
+from pydantic import BaseModel
+
+class PinBusRequest(BaseModel):
+    bus_number: str
+
+@router.post("/pin-bus")
+def pin_bus(
+    req: PinBusRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Pin a bus by bus number. The bus must exist in the system.
+    Returns the pinned bus details.
+    """
+    bus = db.query(models.Bus).filter(models.Bus.bus_number == req.bus_number).first()
+    if not bus:
+        raise HTTPException(status_code=404, detail=f"Bus {req.bus_number} not found")
+
+    # Check if already pinned to avoid duplicates
+    existing = db.query(models.PinnedBus).filter(
+        models.PinnedBus.user_id == current_user.id,
+        models.PinnedBus.bus_id == bus.id
+    ).first()
+    if existing:
+        return {"status": "already_pinned", "bus_number": req.bus_number}
+
+    pinned = models.PinnedBus(
+        user_id=current_user.id,
+        bus_id=bus.id,
+    )
+    db.add(pinned)
+    db.commit()
+    db.refresh(pinned)
+    return {"status": "pinned", "bus_number": req.bus_number, "bus_id": bus.id}
+
+@router.post("/unpin-bus")
+def unpin_bus(
+    req: PinBusRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Unpin a bus by bus number for the current user.
+    """
+    bus = db.query(models.Bus).filter(models.Bus.bus_number == req.bus_number).first()
+    if not bus:
+        raise HTTPException(status_code=404, detail=f"Bus {req.bus_number} not found")
+
+    pinned = db.query(models.PinnedBus).filter(
+        models.PinnedBus.user_id == current_user.id,
+        models.PinnedBus.bus_id == bus.id
+    ).first()
+    if not pinned:
+        return {"status": "not_pinned", "bus_number": req.bus_number}
+
+    db.delete(pinned)
+    db.commit()
+    return {"status": "unpinned", "bus_number": req.bus_number, "bus_id": bus.id}

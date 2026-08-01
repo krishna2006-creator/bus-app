@@ -115,18 +115,31 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ],
                       ),
                     ),
-                    trailing: n.targetScreen != null
-                        ? IconButton(
-                            icon: const Icon(Icons.arrow_forward_ios, 
-                                color: AppColors.info),
-                            onPressed: () {
-                              _handleNotificationTap(context, n);
-                            },
-                          )
-                        : null,
-                    onTap: () {
-                      _handleNotificationTap(context, n);
-                    },
+                     trailing: Row(
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         // Navigate button (only if target screen exists)
+                         if (n.targetScreen != null)
+                           IconButton(
+                             icon: const Icon(Icons.arrow_forward_ios,
+                                 color: AppColors.info),
+                             onPressed: () {
+                               _handleNotificationTap(context, n);
+                             },
+                           ),
+                         // Delete button - always visible
+                         IconButton(
+                           icon: const Icon(Icons.delete,
+                               color: Colors.red, size: 20),
+                           onPressed: () {
+                             notificationService.deleteNotification(n.id);
+                           },
+                         ),
+                       ],
+                     ),
+                     onTap: () {
+                       _handleNotificationTap(context, n);
+                     },
                   ),
                 );
               },

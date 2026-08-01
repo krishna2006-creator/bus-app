@@ -79,6 +79,36 @@ class ApiService {
     };
   }
 
+  static Future<bool> pinBusByNumber(String busNumber) async {
+    final url = Uri.parse('$baseUrl/students/pin-bus');
+    try {
+      final response = await http.post(
+        url,
+        headers: await getHeaders(),
+        body: json.encode({'bus_number': busNumber}),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Exception while pinning bus: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> unpinBusByNumber(String busNumber) async {
+    final url = Uri.parse('$baseUrl/students/unpin-bus');
+    try {
+      final response = await http.post(
+        url,
+        headers: await getHeaders(),
+        body: json.encode({'bus_number': busNumber}),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Exception while unpinning bus: $e');
+      return false;
+    }
+  }
+
   static Future<bool> registerDeviceToken(String token,
       {String platform = 'android'}) async {
     final url = Uri.parse('$baseUrl/notifications/device-token');

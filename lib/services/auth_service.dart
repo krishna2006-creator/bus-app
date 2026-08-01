@@ -67,15 +67,19 @@ class AuthService extends ChangeNotifier {
       try {
         _currentUser = User.fromJson(json.decode(currentUserJson));
         debugPrint('✅ Auth: Loaded user ${_currentUser?.id} with ${_currentUser?.pinnedBuses.length} pinned buses');
-        
-        // Verify token is still valid by calling fetchMe()
-        final isValid = await fetchMe();
-        if (!isValid) {
-          // Token expired - clear it and require login again
+
+        // CRITICAL FIX: Keep local session even if network fails.
+        // Only logout if the token is explicitly rejected (401).
+        // Network errors or server issues should NOT force a logout.
+        final result = await fetchMe();
+        if (result == 'expired') {
           debugPrint('⚠️ Auth: Token expired, clearing session');
           await logout();
-        } else {
+        } else if (result == 'ok') {
           debugPrint('✅ Auth: Session valid, user authenticated');
+        } else {
+          debugPrint('⚠️ Auth: Network error, keeping local session (offline mode)');
+          // Token still valid locally - don't logout
         }
       } catch (e) {
         debugPrint('Error loading current user session: $e');
@@ -211,13 +215,17 @@ class AuthService extends ChangeNotifier {
 
           // Fetch user profile after login
           final fetchResult = await fetchMe();
-          if (fetchResult) {
+          if (fetchResult == 'ok') {
             return {'success': true, 'message': 'Logged in successfully'};
-          } else {
+          } else if (fetchResult == 'expired') {
             return {
               'success': false,
-              'message': 'Failed to fetch user profile'
+              'message': 'Token expired, please login again'
             };
+          } else {
+            // Network error - keep token and try with cached local data
+            debugPrint('⚠️ LOGIN: Network error during fetchMe, keeping token');
+            return {'success': true, 'message': 'Logged in successfully (offline mode)'};
           }
         } catch (e) {
           debugPrint('❌ LOGIN: Error parsing token response: $e');
@@ -255,11 +263,12 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> fetchMe() async {
+  /// Returns 'ok' if user loaded, 'expired' if token invalid, 'offline' if network error
+  Future<String> fetchMe() async {
     try {
       if (_token == null) {
         debugPrint('❌ FETCHME: No token available');
-        return false;
+        return 'expired';
       }
 
       debugPrint(
@@ -297,27 +306,27 @@ class AuthService extends ChangeNotifier {
             }
           }
 
-          return true;
+          return 'ok';
         } catch (e) {
           debugPrint('❌ FETCHME: Error parsing user data: $e');
-          return false;
+          return 'offline';
         }
       } else if (response.statusCode == 401) {
         debugPrint('❌ FETCHME: Token invalid or expired');
-        return false;
+        return 'expired';
       } else {
         debugPrint('❌ FETCHME: Server error - ${response.statusCode}');
-        return false;
+        return 'offline';
       }
     } on SocketException catch (e) {
       debugPrint('❌ FETCHME: Network error - $e');
-      return false;
+      return 'offline';
     } on TimeoutException catch (e) {
       debugPrint('❌ FETCHME: Request timeout - $e');
-      return false;
+      return 'offline';
     } catch (e) {
       debugPrint('❌ FETCHME: Unexpected error - $e');
-      return false;
+      return 'offline';
     }
   }
 
@@ -351,8 +360,20 @@ class AuthService extends ChangeNotifier {
       pinned.add(busNumber);
       _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
       await updateUser(_currentUser!);
+
+      // CRITICAL FIX: Persist pinned bus to backend so it survives app restart
+      try {
+        final success = await ApiService.pinBusByNumber(busNumber);
+        if (success) {
+          debugPrint('✅ Pinned bus $busNumber saved to backend');
+        } else {
+          debugPrint('⚠️ Failed to save pinned bus to backend, using local storage');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Backend pin save failed: $e');
+      }
+
       // Subscribe to FCM topic for this bus to receive push notifications
-      // when the bus starts tracking, updates location, etc.
       try {
         final topic = 'bus_$busNumber';
         await FirebaseMessaging.instance.subscribeToTopic(topic);
@@ -369,6 +390,17 @@ class AuthService extends ChangeNotifier {
     pinned.remove(busNumber);
     _currentUser = _currentUser!.copyWith(pinnedBuses: pinned);
     await updateUser(_currentUser!);
+
+    // CRITICAL FIX: Remove pinned bus from backend
+    try {
+      final success = await ApiService.unpinBusByNumber(busNumber);
+      if (success) {
+        debugPrint('✅ Unpinned bus $busNumber from backend');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Backend unpin failed: $e');
+    }
+
     // Unsubscribe from FCM topic for this bus
     try {
       final topic = 'bus_$busNumber';

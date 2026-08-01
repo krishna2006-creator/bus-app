@@ -42,8 +42,8 @@ class _OpenStreetMapScreenState extends State<OpenStreetMapScreen>
   bool _hasReachedPickup = false;
   bool _isSelectingPickup = true; // Track if user is in selection mode
 
-  // Agni College of Technology, Thalambur, Chennai
-  final LatLng _collegeLocation = const LatLng(12.8482, 80.1943);
+    // Agni College of Technology, Thalambur, Chennai
+    final LatLng _collegeLocation = const LatLng(12.836371, 80.222332);
 
   @override
   void initState() {
