@@ -159,18 +159,16 @@ class NotificationService:
             title="Live Tracking Started",
             message=f"Your pinned bus {bus_number} has started live location sharing.",
             category="PINNED_BUS_LIVE_STARTED",
+            notificationType="location_started",
+            targetScreen="/track-bus-maps",
             data={"bus_id": bus_id, "bus_number": bus_number}
         )
 
     async def notify_pinned_bus_location_updated(self, db: Session, bus_id: int, bus_number: str):
         """Notify pinned users when bus location is updated."""
-        await self.notify_pinned_users(
-            db, bus_id,
-            title=f"Bus {bus_number} Location Updated",
-            message=f"Your pinned bus {bus_number} location has been updated.",
-            category="PINNED_BUS_LOCATION_UPDATE",
-            data={"bus_id": bus_id, "bus_number": bus_number}
-        )
+        # CRITICAL FIX: Do NOT send notifications for regular location updates
+        # Only notify for significant events (started, approaching, arrived, stopped)
+        debugPrint(f"Location update for bus {bus_number} suppressed (no notification)")
 
     async def notify_pinned_bus_approaching_stop(self, db: Session, bus_id: int, bus_number: str, stop_name: str, distance_km: float):
         """Notify pinned users when bus is approaching their selected stop."""
@@ -219,19 +217,22 @@ class NotificationService:
             title=f"Bus {bus_number} Trip Completed",
             message=f"Your pinned bus {bus_number} has completed its trip.",
             category="PINNED_BUS_TRIP_COMPLETED",
+            notificationType="location_stopped",
+            targetScreen="/track-bus-maps",
             data={"bus_id": bus_id, "bus_number": bus_number}
         )
 
-    async def notify_student_shared_location(self, db: Session, bus_id: int, bus_number: str):
+    async def notify_student_shared_location(self, db: Session, bus_id: int, bus_number: str, student_id: str = None):
         """Notify pinned users when a student shares location for their pinned bus.
-        Fixed: triggers correctly when bus is pinned and any student shares location.
+        Fixed: Does NOT send notification to the student who is sharing (the sharer).
         Fixed: includes sound for delivery to admin, staff, and students with sound."""
         await self.notify_pinned_users(
             db, bus_id,
             title="Live Location Updated",
             message=f"Your pinned bus {bus_number} location has been updated by a community contributor.",
             category="COMMUNITY_LOCATION_UPDATE",
-            data={"bus_id": bus_id, "bus_number": bus_number, "shared_by": "student"}
+            data={"bus_id": bus_id, "bus_number": bus_number, "shared_by": "student"},
+            exclude_user_id=student_id
         )
 
     async def notify_admin_announcement(self, db: Session, title: str, message: str, category: str = "announcement", data: dict = None, exclude_user_id: int = None):

@@ -150,20 +150,27 @@ class _StaffDashboardState extends State<StaffDashboard> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _QuickActionButton(
-                          icon: Icons.request_page,
-                          label: 'Requests',
-                          color: Colors.green,
-                          onTap: () => context.push('/staff/requests'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Spacer(),
-                    ],
-                  ),
+                   Row(
+                     children: [
+                       Expanded(
+                         child: _QuickActionButton(
+                           icon: Icons.request_page,
+                           label: 'Requests',
+                           color: Colors.green,
+                           onTap: () => context.push('/staff/requests'),
+                         ),
+                       ),
+                       const SizedBox(width: 12),
+                       Expanded(
+                         child: _QuickActionButton(
+                           icon: Icons.map,
+                           label: 'Live Tracking',
+                           color: Colors.deepOrange,
+                           onTap: () => context.push('/staff/live-tracking'),
+                         ),
+                       ),
+                     ],
+                   ),
                   const SizedBox(height: 12),
                   const Text('Pinned Buses',
                       style:

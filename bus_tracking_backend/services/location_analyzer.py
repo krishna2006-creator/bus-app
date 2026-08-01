@@ -119,9 +119,9 @@ class LocationAnalyzer:
                 db, bus_id, bus_number
             )
 
-        # 2. NOTIFY: Student shared location
+        # 2. NOTIFY: Student shared location (exclude the sharer from notification)
         if is_student_sharing:
-            await notification_service.notify_student_shared_location(db, bus_id, bus_number)
+            await notification_service.notify_student_shared_location(db, bus_id, bus_number, student_id=u_id)
 
         # 3. NOTIFY: Geofence distance-based alerts for ALL stops this bus serves
         bus_stops = db.query(models.BusStop).filter(

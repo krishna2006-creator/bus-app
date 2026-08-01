@@ -348,32 +348,10 @@ class StopPredictionProvider with ChangeNotifier {
   }
 
   Future<void> selectStop(BusStop stop) async {
-    // If the user picked a random spot on the map, find the nearest official bus stop
-    // CRITICAL FIX: Allow users to choose any place even if no system stops exist
-    BusStop targetStop = stop;
-    if (stop.id < 0) {
-      if (_allStops.isNotEmpty) {
-        double minDistance = double.infinity;
-        for (var s in _allStops) {
-          final dist = Geolocator.distanceBetween(
-            stop.location.latitude,
-            stop.location.longitude,
-            s.location.latitude,
-            s.location.longitude,
-          );
-          if (dist < minDistance) {
-            minDistance = dist;
-            targetStop = s;
-          }
-        }
-        debugPrint("Snapped selection to nearest stop: ${targetStop.name}");
-      } else {
-        // No system stops - use the dropped pin location directly
-        debugPrint(
-            "No system stops found - using custom location: ${stop.name}");
-        targetStop = stop;
-      }
-    }
+    // REDESIGN: Allow users to choose ANY point on the map
+    // No longer snapping to nearest system stop - users can pick any boarding point
+    final targetStop = stop;
+    debugPrint("User selected boarding point: ${targetStop.name} at ${targetStop.location.latitude}, ${targetStop.location.longitude}");
 
     _error = null;
     _isLoading = true;
@@ -455,8 +433,9 @@ class StopPredictionProvider with ChangeNotifier {
 
     try {
       final headers = await ApiService.getHeaders();
+      // REDESIGN: Use new endpoint that accepts any GPS coordinates
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/stops/$stopId/predictions'),
+        Uri.parse('${ApiService.baseUrl}/predictions/eta?stop_id=$stopId'),
         headers: headers,
       );
 

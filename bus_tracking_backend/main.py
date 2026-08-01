@@ -229,6 +229,7 @@ async def admin_get_all_buses(db: Session = Depends(get_db), current_user: model
                     "speed": live_loc.speed, "direction": live_loc.bearing,
                     "timestamp": live_loc.timestamp.isoformat() if live_loc.timestamp else None,
                 }
+        is_active = bus.location_sharing_active if hasattr(bus, 'location_sharing_active') else False
         if not last_loc:
             cached_loc = location_analyzer.active_locations.get(str(bus.id))
             if cached_loc:
@@ -238,17 +239,17 @@ async def admin_get_all_buses(db: Session = Depends(get_db), current_user: model
                     "direction": cached_loc.get("bearing", cached_loc.get("direction", 0.0)),
                     "timestamp": cached_loc.get("timestamp", None),
                 }
-        is_active = bus.location_sharing_active if hasattr(bus, 'location_sharing_active') else False
         if bus_info and bus_info.get("has_last_location"):
             is_active = True
         driver = db.query(models.User).filter(models.User.id == bus.driver_id).first() if bus.driver_id else None
-        result.append({
+        bus_data = {
             "id": bus.id, "bus_number": bus.bus_number, "route_name": bus.route_name,
             "capacity": bus.capacity, "status": bus.status, "driver_id": bus.driver_id,
             "driver_name": driver.full_name if driver else None, "driver_phone": bus.driver_phone,
             "live_location": last_loc, "active_users": bus_info.get("user_count", 0) if bus_info else 0,
             "location_sharing_active": is_active,
-        })
+        }
+        result.append(bus_data)
     return result
 
 @api_router.get("/admin/locations")

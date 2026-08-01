@@ -18,9 +18,11 @@ class PinnedBusMonitorService extends ChangeNotifier {
   Timer? _monitorTimer;
   final Set<String> _notifiedBuses = {};
   final Map<String, PinnedBusTrackingData> _trackingData = {};
+  final Map<String, DateTime> _lastNotificationTime = {};
 
   static const double alertDistanceKm = 1.0;
   static const double departureDistanceKm = 2.0;
+  static const Duration notificationThrottleDuration = Duration(minutes: 5);
 
   double _boardingStopLat = 0.0;
   double _boardingStopLng = 0.0;
@@ -35,13 +37,22 @@ class PinnedBusMonitorService extends ChangeNotifier {
   Map<String, PinnedBusTrackingData> get trackingData => _trackingData;
 
   void startMonitoring() {
-    _updateBoardingStopLocation();
+    debugPrint('🚌 PinnedBusMonitor: Starting monitoring service');
+    _updateBoardingStopLocation().then((_) {
+      debugPrint('🚌 PinnedBusMonitor: Boarding stop location updated');
+    }).catchError((e) {
+      debugPrint('🚌 PinnedBusMonitor: Error updating boarding stop: $e');
+    });
+    
     _monitorTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _checkPinnedBuses();
     });
+    
     _locationCacheTimer = Timer.periodic(const Duration(minutes: 2), (_) {
       _updateBoardingStopLocation();
     });
+    
+    debugPrint('🚌 PinnedBusMonitor: Monitoring started, checking every 3 seconds');
   }
 
   void stopMonitoring() {
@@ -51,6 +62,7 @@ class PinnedBusMonitorService extends ChangeNotifier {
     _locationCacheTimer = null;
     _notifiedBuses.clear();
     _trackingData.clear();
+    _lastNotificationTime.clear();
     notifyListeners();
   }
 
@@ -82,10 +94,17 @@ class PinnedBusMonitorService extends ChangeNotifier {
   Future<void> _checkPinnedBuses() async {
     try {
       final user = _authService.currentUser;
-      if (user == null || user.pinnedBuses.isEmpty) return;
-      if (_boardingStopLat == 0.0 && _boardingStopLng == 0.0) return;
+      if (user == null) {
+        debugPrint('🚌 PinnedBusMonitor: No user logged in');
+        return;
+      }
+      
+      if (user.pinnedBuses.isEmpty) {
+        return;
+      }
 
       final allLocations = _locationService.allLocations;
+      debugPrint('🚌 PinnedBusMonitor: Checking ${user.pinnedBuses.length} pinned buses, ${allLocations.length} locations available');
 
       for (final pinnedBusNumber in user.pinnedBuses) {
         BusLocation? busLocation;
@@ -94,6 +113,10 @@ class PinnedBusMonitorService extends ChangeNotifier {
             busLocation = loc;
             break;
           }
+        }
+        
+        if (busLocation == null) {
+          debugPrint('🚌 PinnedBusMonitor: Bus $pinnedBusNumber not found in locations');
         }
 
         if (busLocation == null) {
@@ -113,8 +136,11 @@ class PinnedBusMonitorService extends ChangeNotifier {
         final wasUnknown = !_trackingData.containsKey(pinnedBusNumber) ||
             _trackingData[pinnedBusNumber]!.status == 'unknown';
 
+        debugPrint('🚌 PinnedBusMonitor: Bus $pinnedBusNumber - wasUnknown: $wasUnknown, location found');
+
         // Send notification when bus starts sharing location
         if (wasUnknown) {
+          debugPrint('🚌 PinnedBusMonitor: Sending "started" notification for $pinnedBusNumber');
           await _sendBusStartedNotification(pinnedBusNumber);
         }
 
@@ -152,11 +178,19 @@ class PinnedBusMonitorService extends ChangeNotifier {
           lastUpdated: DateTime.now(),
         );
 
+        // Throttle nearby notifications to prevent spam
+        final now = DateTime.now();
+        final lastNotif = _lastNotificationTime[pinnedBusNumber];
+        final canSendNearbyNotif = lastNotif == null || 
+            now.difference(lastNotif) > notificationThrottleDuration;
+
         if (distance <= alertDistanceKm &&
-            !_notifiedBuses.contains(pinnedBusNumber)) {
+            !_notifiedBuses.contains(pinnedBusNumber) &&
+            canSendNearbyNotif) {
           await _sendBusNearbyNotification(
               pinnedBusNumber, distance, etaMinutes);
           _notifiedBuses.add(pinnedBusNumber);
+          _lastNotificationTime[pinnedBusNumber] = now;
         }
         if (distance > departureDistanceKm &&
             _notifiedBuses.contains(pinnedBusNumber)) {
@@ -201,15 +235,25 @@ class PinnedBusMonitorService extends ChangeNotifier {
   Future<void> _sendBusStartedNotification(String busNumber) async {
     final user = _authService.currentUser;
     if (user == null) return;
+
+    // Throttle started notifications - only send once per bus per session
+    final notificationKey = 'started_$busNumber';
+    if (_notifiedBuses.contains(notificationKey)) {
+      return; // Already notified for this bus
+    }
+
     final notification = AppNotification(
       id: 'bus_started_${busNumber}_${DateTime.now().millisecondsSinceEpoch}',
       userId: user.id,
       title: 'Bus $busNumber Started',
       message: 'Bus $busNumber has started sharing location',
       category: 'BUS_STARTED',
+      notificationType: 'location_started',
+      targetScreen: '/track-bus-maps',
       createdAt: DateTime.now(),
     );
     await _notificationService.addNotification(notification);
+    _notifiedBuses.add(notificationKey);
   }
 }
 

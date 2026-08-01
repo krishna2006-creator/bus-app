@@ -48,6 +48,7 @@ import 'package:agni_college_bus_tracker/screens/student/pinned_bus_tracking_scr
 import 'package:agni_college_bus_tracker/screens/student/shared_bus_tracking_screen.dart';
 import 'package:agni_college_bus_tracker/screens/admin/admin_live_tracking_screen.dart';
 import 'package:agni_college_bus_tracker/screens/common/bus_live_tracking_map_screen.dart';
+import 'package:agni_college_bus_tracker/screens/common/live_tracking_map_screen.dart';
 
 // Placeholder for StaffRequestsPage
 class StaffRequestsPage extends StatelessWidget {
@@ -77,8 +78,6 @@ Future<void> safeInit(String name, Future<void> Function() fn) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    // For web, we need to pass FirebaseOptions explicitly
-    // For Android/iOS, the google-services.json is used automatically
     if (kIsWeb) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
@@ -102,33 +101,22 @@ void main() async {
   };
 
   final navigatorKey = GlobalKey<NavigatorState>();
-  // Initialize services
   final authService = AuthService(navigatorKey);
   final busService = BusService();
   final locationService = LocationService();
   final notificationService = NotificationService();
-
-  // Services with dependencies
   final liveTrackingService = LiveTrackingService();
   final announcementService = AnnouncementService(notificationService);
   final requestService = RequestService(notificationService);
   final fileService = FileService(notificationService);
-
   final tripService = TripService();
   final feedbackService = FeedbackService(authService);
   final stopPredictionProvider = StopPredictionProvider();
   stopPredictionProvider.setLiveTrackingService(liveTrackingService);
 
-  // Create pinned bus monitor service
-  late PinnedBusMonitorService pinnedBusMonitorService;
-
-  // CRITICAL FIX: Initialize auth first to load token from SharedPreferences
   await safeInit('auth', () async => await authService.initialize());
-
-  // CRITICAL FIX: Ensure token is loaded before notification service init
   final authToken = await ApiService.getToken();
 
-  // Then initialize other services safely
   await Future.wait([
     safeInit('bus', () => busService.initialize()),
     safeInit('location', () => locationService.initialize()),
@@ -143,26 +131,44 @@ void main() async {
     safeInit('feedback', () => feedbackService.initialize()),
   ]);
 
-  // Set callback for auth service to reconnect notifications after login
   authService.setNotificationCallback(
       (userId) => notificationService.reconnectAfterLogin(userId));
-
-  // Connect WebSocket stream from NotificationService to LocationService
   locationService.listenToWebSocketUpdates(notificationService.messages);
 
-  // Initialize pinned bus monitor service
-  pinnedBusMonitorService = PinnedBusMonitorService(
+  final pinnedBusMonitorService = PinnedBusMonitorService(
     locationService,
     notificationService,
     authService,
   );
+  
+  // CRITICAL FIX: Start monitoring if user is logged in with pinned buses
   if (authService.currentUser != null) {
-    pinnedBusMonitorService.startMonitoring();
+    final pinnedBuses = authService.currentUser!.pinnedBuses;
+    debugPrint('🚌 Main: User has ${pinnedBuses.length} pinned buses: $pinnedBuses');
+    if (pinnedBuses.isNotEmpty) {
+      debugPrint('🚌 Main: Starting pinned bus monitoring');
+      pinnedBusMonitorService.startMonitoring();
+    } else {
+      debugPrint('🚌 Main: No pinned buses to monitor');
+    }
+  } else {
+    debugPrint('🚌 Main: No user logged in on startup');
   }
 
-  // CRITICAL FIX: Set logout callback to stop pinned bus monitoring
   authService.setLogoutCallback(() async {
+    debugPrint('🚌 Main: Logout - stopping monitoring');
     pinnedBusMonitorService.stopMonitoring();
+  });
+  
+  // CRITICAL FIX: Add login callback to restart monitoring after login
+  authService.setNotificationCallback((userId) async {
+    debugPrint('🚌 Main: Login callback - restarting monitoring for user $userId');
+    // Wait a bit for user data to load from backend
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (authService.currentUser != null && authService.currentUser!.pinnedBuses.isNotEmpty) {
+      debugPrint('🚌 Main: Starting monitoring for ${authService.currentUser!.pinnedBuses.length} pinned buses');
+      pinnedBusMonitorService.startMonitoring();
+    }
   });
 
   runApp(MyApp(
@@ -270,7 +276,7 @@ class MyApp extends StatelessWidget {
               path: '/',
               name: 'home',
               pageBuilder: (context, state) =>
-                  const MaterialPage(child: HomePage()),
+                  MaterialPage(child: HomePage()),
             ),
             GoRoute(
               path: '/login',
@@ -519,6 +525,20 @@ class MyApp extends StatelessWidget {
                 final bus = state.extra as Bus;
                 return MaterialPage(child: BusLiveTrackingMapScreen(bus: bus));
               },
+            ),
+            GoRoute(
+              path: '/student/live-tracking',
+              name: 'student-live-tracking',
+              pageBuilder: (context, state) => MaterialPage(
+                child: LiveTrackingMapScreen(showOnlyPinnedBuses: true),
+              ),
+            ),
+            GoRoute(
+              path: '/staff/live-tracking',
+              name: 'staff-live-tracking',
+              pageBuilder: (context, state) => MaterialPage(
+                child: LiveTrackingMapScreen(showOnlyPinnedBuses: true),
+              ),
             ),
             GoRoute(
               path: '/notifications',

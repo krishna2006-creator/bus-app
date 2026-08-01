@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
 import 'package:agni_college_bus_tracker/services/auth_service.dart';
+import 'package:agni_college_bus_tracker/models/app_notification.dart';
 import 'package:agni_college_bus_tracker/theme.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -58,7 +59,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              // Force refresh by reinitializing notifications
               notificationService.initialize(user.id, null);
             },
           ),
@@ -115,35 +115,67 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ],
                       ),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: AppColors.error),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Delete notification?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx),
-                                child: const Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  notificationService.deleteNotification(n.id);
-                                  Navigator.pop(ctx);
-                                },
-                                child: const Text('Delete'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                    trailing: n.targetScreen != null
+                        ? IconButton(
+                            icon: const Icon(Icons.arrow_forward_ios, 
+                                color: AppColors.info),
+                            onPressed: () {
+                              _handleNotificationTap(context, n);
+                            },
+                          )
+                        : null,
+                    onTap: () {
+                      _handleNotificationTap(context, n);
+                    },
                   ),
                 );
               },
             ),
     );
+  }
+
+  void _handleNotificationTap(BuildContext context, AppNotification n) async {
+    // Mark as read
+    final notificationService = context.read<NotificationService>();
+    notificationService.markRead(n.id);
+
+    // Navigate to target screen if available
+    final targetScreen = n.targetScreen;
+    if (targetScreen != null) {
+      // Handle entity-specific navigation
+      if (n.entityId != null) {
+        // For entity-specific screens, pass the entity ID as extra
+        switch (n.notificationType) {
+          case 'announcement':
+            context.go('/student/announcements');
+            break;
+          case 'document':
+            context.go('/student/documents');
+            break;
+          case 'feedback':
+            context.go('/student/feedback');
+            break;
+          case 'request':
+            context.go('/student/my-requests');
+            break;
+          case 'location_started':
+          case 'bus_arriving':
+          case 'bus_arrived':
+          case 'bus_departed':
+            context.go('/track-bus-maps');
+            break;
+          default:
+            if (targetScreen.startsWith('/')) {
+              context.go(targetScreen);
+            }
+        }
+      } else {
+        // Navigate to the target screen
+        if (targetScreen.startsWith('/')) {
+          context.go(targetScreen);
+        }
+      }
+    }
   }
 
   String _formatDate(DateTime dateTime) {

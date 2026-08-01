@@ -87,10 +87,11 @@ class NotificationService extends ChangeNotifier {
         sound: null,
       );
 
-      await FlutterLocalNotificationsPlugin()
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(androidChannel);
+      final androidImplementation = FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImplementation != null) {
+        await androidImplementation.createNotificationChannel(androidChannel);
+      }
 
       await FirebaseMessaging.instance
           .setForegroundNotificationPresentationOptions(
@@ -99,9 +100,20 @@ class NotificationService extends ChangeNotifier {
         sound: true,
       );
 
+      // Handle foreground messages
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-      FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler);
+
+      // Handle background/terminated messages
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+      // Handle notification tap when app is in background/terminated
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+
+      // Check if app was opened from a terminated state via notification
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null) {
+        _handleNotificationTap(initialMessage);
+      }
 
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken != null) {
@@ -110,6 +122,24 @@ class NotificationService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error initializing Firebase Messaging: $e');
     }
+  }
+
+  void _handleNotificationTap(RemoteMessage message) async {
+    final data = message.data;
+    final notificationType = data['notificationType'] ?? data['category'];
+    final targetScreen = data['targetScreen'];
+    final entityId = data['entityId'];
+    
+    debugPrint('Notification tapped: type=$notificationType, screen=$targetScreen, entityId=$entityId');
+
+    // Store navigation info for when app is ready
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pending_notification_navigation', json.encode({
+      'notificationType': notificationType,
+      'targetScreen': targetScreen,
+      'entityId': entityId,
+      'payload': data,
+    }));
   }
 
   Future<void> _sendTokenToBackend(String token) async {
@@ -121,12 +151,21 @@ class NotificationService extends ChangeNotifier {
   }
 
   void _handleForegroundMessage(RemoteMessage message) async {
+    final data = message.data;
+    final notificationType = data['notificationType'] ?? data['category'] ?? 'general';
+    final targetScreen = data['targetScreen'];
+    final entityId = data['entityId'];
+    
     final notification = AppNotification(
       id: message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
       userId: '',
       title: message.notification?.title ?? 'Notification',
       message: message.notification?.body ?? '',
-      category: 'firebase',
+      category: notificationType,
+      notificationType: notificationType,
+      targetScreen: targetScreen,
+      entityId: entityId,
+      payload: data.isNotEmpty ? Map<String, dynamic>.from(data) : null,
       createdAt: DateTime.now(),
       soundEnabled: true,
     );
@@ -156,10 +195,54 @@ class NotificationService extends ChangeNotifier {
 
     _localNotifications.initialize(
       settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {},
+      onDidReceiveNotificationResponse: (details) {
+        // Handle local notification tap
+        final payload = details.payload;
+        if (payload != null) {
+          try {
+            final data = json.decode(payload);
+            _navigateToScreen(data);
+          } catch (e) {
+            debugPrint('Error parsing notification payload: $e');
+          }
+        }
+      },
     );
 
     _localNotificationsInitialized = true;
+  }
+
+  void _navigateToScreen(Map<String, dynamic> data) async {
+    final targetScreen = data['targetScreen'] as String?;
+    if (targetScreen == null) return;
+
+    // Wait for navigator to be ready
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    // Store navigation request
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pending_navigation', targetScreen);
+  }
+
+  Future<void> processPendingNavigation() async {
+    final prefs = await SharedPreferences.getInstance();
+    final targetScreen = prefs.getString('pending_navigation');
+    final navData = prefs.getString('pending_notification_navigation');
+    
+    if (targetScreen != null) {
+      await prefs.remove('pending_navigation');
+      // Navigate using GoRouter
+      // This will be handled by the app's navigator
+    }
+    
+    if (navData != null) {
+      await prefs.remove('pending_notification_navigation');
+      final data = json.decode(navData);
+      final screen = data['targetScreen'] as String?;
+      if (screen != null) {
+        // Navigate to the screen
+      }
+    }
   }
 
   Future<void> requestPermissions() async {
@@ -205,6 +288,10 @@ class NotificationService extends ChangeNotifier {
               title: payload['title'] ?? 'Notification',
               message: payload['message'] ?? '',
               category: payload['category'] ?? 'default',
+              notificationType: payload['notificationType'],
+              targetScreen: payload['targetScreen'],
+              entityId: payload['entityId'],
+              payload: payload['data'] != null ? Map<String, dynamic>.from(payload['data']) : null,
               createdAt: DateTime.now(),
               soundEnabled: true,
             );
@@ -301,7 +388,13 @@ class NotificationService extends ChangeNotifier {
               sound: 'default.wav',
             ),
           ),
-          payload: json.encode({'category': n.category, 'id': n.id}),
+          payload: json.encode({
+            'category': n.category,
+            'id': n.id,
+            'notificationType': n.notificationType,
+            'targetScreen': n.targetScreen,
+            'entityId': n.entityId,
+          }),
         );
       } catch (e) {
         debugPrint("Error showing local notification: $e");
@@ -324,6 +417,9 @@ class NotificationService extends ChangeNotifier {
         userId: u.id,
         title: title,
         message: message,
+        category: 'announcement',
+        notificationType: 'announcement',
+        targetScreen: '/student/announcements',
         createdAt: ts,
         soundEnabled: true,
       );
@@ -387,9 +483,12 @@ class NotificationService extends ChangeNotifier {
         final n = AppNotification(
           id: '${u.id}_${ts.millisecondsSinceEpoch}_$bus',
           userId: u.id,
-          title: 'Bus $bus updated location',
-          message: 'Bus $bus is on the move!',
+          title: 'Bus $bus started sharing location',
+          message: 'Driver has started sharing live location for bus $bus',
           busNumber: bus,
+          category: 'LOCATION_STARTED',
+          notificationType: 'location_started',
+          targetScreen: '/track-bus-maps',
           createdAt: ts,
           soundEnabled: true,
         );
@@ -408,6 +507,10 @@ class NotificationService extends ChangeNotifier {
       userId: userId,
       title: '🚌 Bus Arriving!',
       message: 'Bus $busNumber is arriving at $pickupPoint',
+      busNumber: busNumber,
+      category: 'BUS_ARRIVING',
+      notificationType: 'bus_arriving',
+      targetScreen: '/track-bus-maps',
       createdAt: DateTime.now(),
       soundEnabled: true,
     );
@@ -424,6 +527,10 @@ class NotificationService extends ChangeNotifier {
       userId: userId,
       title: '✅ Arrived!',
       message: 'Bus $busNumber has arrived at college',
+      busNumber: busNumber,
+      category: 'BUS_ARRIVED',
+      notificationType: 'bus_arrived',
+      targetScreen: '/track-bus-maps',
       createdAt: DateTime.now(),
       soundEnabled: true,
     );
@@ -439,6 +546,10 @@ class NotificationService extends ChangeNotifier {
       userId: userId,
       title: '🚗 Bus Departed',
       message: 'Bus $busNumber has left boarding point, heading to college',
+      busNumber: busNumber,
+      category: 'BUS_DEPARTED',
+      notificationType: 'bus_departed',
+      targetScreen: '/track-bus-maps',
       createdAt: DateTime.now(),
       soundEnabled: true,
     );
@@ -450,19 +561,10 @@ class NotificationService extends ChangeNotifier {
 
   Future<void> notifyDistanceUpdate(String userId, String busNumber,
       double distanceKm, int minutesETA) async {
-    final notification = AppNotification(
-      id: 'distance_${userId}_${DateTime.now().millisecondsSinceEpoch}',
-      userId: userId,
-      title: '📍 Bus Location',
-      message:
-          'Bus $busNumber is ${distanceKm.toStringAsFixed(1)} km away ($minutesETA min)',
-      createdAt: DateTime.now(),
-      soundEnabled: true,
-    );
-    _notifications.insert(0, notification);
-    await _save();
-    notifyListeners();
-    await addNotification(notification);
+    // CRITICAL FIX: Do NOT send notifications for distance updates
+    // Distance updates should only be shown in the tracking UI, not as notifications
+    // Notifications should only be sent for significant events (arriving, arrived, departed)
+    debugPrint('Distance update suppressed (no notification sent): $busNumber is ${distanceKm.toStringAsFixed(1)} km away');
   }
 
   Future<void> _save() async {

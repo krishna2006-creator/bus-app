@@ -66,15 +66,16 @@ class AuthService extends ChangeNotifier {
     if (currentUserJson != null && _token != null) {
       try {
         _currentUser = User.fromJson(json.decode(currentUserJson));
+        debugPrint('✅ Auth: Loaded user ${_currentUser?.id} with ${_currentUser?.pinnedBuses.length} pinned buses');
+        
         // Verify token is still valid by calling fetchMe()
         final isValid = await fetchMe();
         if (!isValid) {
           // Token expired - clear it and require login again
-          _currentUser = null;
-          _token = null;
-          await prefs.remove('auth_token');
-          await prefs.remove(_currentUserKey);
-          await prefs.remove(lastRoleKey);
+          debugPrint('⚠️ Auth: Token expired, clearing session');
+          await logout();
+        } else {
+          debugPrint('✅ Auth: Session valid, user authenticated');
         }
       } catch (e) {
         debugPrint('Error loading current user session: $e');
@@ -142,14 +143,27 @@ class AuthService extends ChangeNotifier {
       if (localUsers.isNotEmpty) {
         debugPrint('✅ LOGIN: Local user found - $identifier');
         _currentUser = localUsers.first;
-
-        // Use the user's ID directly as the token since the backend's get_current_user
-        // function first checks if the token matches a user ID directly.
-        // This allows local admin users to make authenticated API calls without a JWT.
+        debugPrint('✅ LOGIN: User has ${_currentUser!.pinnedBuses.length} pinned buses');
+      } else {
+        // For backend users, fetch profile to get pinned buses
         return await _loginWithBackend(identifier, password);
       }
 
-      return await _loginWithBackend(identifier, password);
+      // For local users, also try to login with backend if available
+      // But if network fails, still allow login with local data
+      try {
+        final backendResult = await _loginWithBackend(identifier, password);
+        if (backendResult['success'] == true) {
+          debugPrint('✅ LOGIN: Backend login successful');
+          return backendResult;
+        }
+      } catch (e) {
+        debugPrint('⚠️ LOGIN: Backend unavailable, using local auth');
+      }
+
+      // If backend login fails but local user exists, still allow login
+      // but don't set token (will be null)
+      return {'success': true, 'message': 'Logged in successfully (offline mode)'};
     } on SocketException catch (e) {
       debugPrint('❌ LOGIN: Network error - $e');
       return {
@@ -177,7 +191,7 @@ class AuthService extends ChangeNotifier {
         Uri.parse('${ApiService.baseUrl}/auth/login'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: {
-          'username': identifier, // OAuth2 expects 'username' (can be email)
+          'username': identifier,
           'password': password,
         },
       ).timeout(const Duration(seconds: 10));
@@ -191,6 +205,7 @@ class AuthService extends ChangeNotifier {
           _token = data['access_token'];
           debugPrint('✅ LOGIN: Token received: ${_token?.substring(0, 20)}...');
 
+          // Store token in SharedPreferences for persistence
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', _token!);
 
