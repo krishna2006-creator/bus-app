@@ -10,7 +10,6 @@ import 'package:agni_college_bus_tracker/providers/stop_prediction_provider.dart
 import 'package:agni_college_bus_tracker/services/announcement_service.dart';
 import 'package:agni_college_bus_tracker/services/notification_service.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
-import 'package:agni_college_bus_tracker/widgets/dashboard_tracking_widget.dart';
 import 'package:agni_college_bus_tracker/screens/admin/admin_live_tracking_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
