@@ -111,9 +111,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs("uploads", exist_ok=True)
+# Use consistent uploads directory path
+UPLOADS_DIR = os.path.join(os.getcwd(), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 from fastapi.staticfiles import StaticFiles
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # ===========================================================================
 # Pydantic models for the /api/send-notification endpoint
@@ -136,7 +138,7 @@ class NotificationResponse(BaseModel):
 
 
 api_router = APIRouter(prefix="/api")
-api_router.mount("/uploads", StaticFiles(directory="uploads"), name="api_uploads")
+api_router.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="api_uploads")
 
 
 # ---------------------------------------------------------------------------

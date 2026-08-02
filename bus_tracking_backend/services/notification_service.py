@@ -12,6 +12,7 @@ Fixed: All FCM notifications now include sound for delivery to admin, staff, and
 Fixed: Pinned bus notifications trigger correctly when bus is pinned and any student/driver shares location
 Fixed: Admin announcements (messages, documents, feedback requests) send to all users with sound
 Fixed: Students receive messages same as admin/staff
+Fixed: Notifications now broadcast CONCURRENTLY to all users for instant delivery (no sequential delay)
 """
 from sqlalchemy.orm import Session
 from ..database import models
@@ -20,6 +21,7 @@ from .firebase_service import firebase_service
 from datetime import datetime
 import logging
 import requests
+import asyncio
 from typing import Optional, List
 
 from ..config import settings
@@ -31,8 +33,16 @@ logger = logging.getLogger(__name__)
 class NotificationService:
     async def send_personal_notification(self, user_id, title: str, message: str, category: str, data: dict = None, priority: str = "high", sound: str = "default"):
         """Sends a real-time notification to a specific user session.
-        Fixed: FCM notifications now include sound for delivery to admin, staff, and students."""
+        Fixed: FCM notifications now include sound for delivery to admin, staff, and students.
+        Fixed: FCM sends are now non-blocking (fire-and-forget) for instant delivery.
+        Fixed: notificationType and targetScreen are extracted from data and placed at top level of payload for Flutter app."""
         u_id_str = str(user_id)
+
+        # Extract notificationType and targetScreen from data for Flutter compatibility
+        data_dict = data or {}
+        notification_type = data_dict.get("notificationType")
+        target_screen = data_dict.get("targetScreen")
+        entity_id = data_dict.get("entityId")
 
         notification = {
             "type": "NOTIFICATION",
@@ -43,19 +53,31 @@ class NotificationService:
                 "category": category,
                 "priority": priority,
                 "sound": sound,
-                "data": data or {}
+                "notificationType": notification_type,
+                "targetScreen": target_screen,
+                "entityId": entity_id,
+                "data": data_dict
             }
         }
 
+        # Send WebSocket message immediately (non-blocking)
         sent_count = await manager.send_personal_message(u_id_str, notification)
 
+        # Fire-and-forget FCM push - don't block the notification delivery
         try:
             from ..database.database import SessionLocal
             db = SessionLocal()
             try:
                 tokens = db.query(models.DeviceToken).filter(models.DeviceToken.user_id == u_id_str).all()
                 if tokens:
-                    self._send_fcm_notifications([t.token for t in tokens], title, message, data or {}, sound=sound)
+                    token_list = [t.token for t in tokens]
+                    # Run FCM in background task - don't block notification delivery
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            self._send_fcm_notifications,
+                            token_list, title, message, data or {}, sound
+                        )
+                    )
             finally:
                 db.close()
         except Exception as exc:
@@ -97,7 +119,8 @@ class NotificationService:
         This ensures offline users still get FCM push notifications.
         If exclude_user_id is provided, that user will not receive the notification.
         Fixed: includes sound for delivery to admin, staff, and students with sound.
-        Fixed: Students receive messages same as admin/staff."""
+        Fixed: Students receive messages same as admin/staff.
+        Fixed: Uses asyncio.gather to send to ALL users CONCURRENTLY - no more sequential delays."""
         role_norm = target_role.lower() if target_role else "all"
         query = db.query(models.User)
         if role_norm != 'all':
@@ -106,34 +129,52 @@ class NotificationService:
         
         all_users = query.all()
         
-        for user in all_users:
-            if exclude_user_id is not None and user.id == exclude_user_id:
-                continue
-            await self.send_personal_notification(user.id, title, message, category, data=data, sound=sound)
+        # Filter out excluded user
+        users_to_notify = [
+            user for user in all_users
+            if exclude_user_id is None or user.id != exclude_user_id
+        ]
         
-        logger.info(f"Broadcast '{category}' sent to {len(all_users)} {target_role} users (WebSocket + FCM) with sound.")
+        # Send notifications CONCURRENTLY to all users for instant delivery
+        if users_to_notify:
+            await asyncio.gather(*[
+                self.send_personal_notification(user.id, title, message, category, data=data, sound=sound)
+                for user in users_to_notify
+            ], return_exceptions=True)
+        
+        logger.info(f"Broadcast '{category}' sent to {len(users_to_notify)} {target_role} users CONCURRENTLY (WebSocket + FCM) with sound.")
 
-    async def notify_pinned_users(self, db: Session, bus_id: int, title: str, message: str, category: str = "pinned_bus", data: dict = None, sound: str = "default"):
+    async def notify_pinned_users(self, db: Session, bus_id: int, title: str, message: str, category: str = "pinned_bus", data: dict = None, sound: str = "default", exclude_user_id: int = None):
         """
         Notify ALL users who have pinned a specific bus.
         Works for both online and offline users (sends FCM to all).
         Fixed: includes sound for delivery to admin, staff, and students with sound.
         Fixed: triggers correctly when bus is pinned and any student/driver shares location.
-        """
+        Fixed: Uses asyncio.gather to send to ALL pinned users CONCURRENTLY."""
         user_id_str = str(bus_id)
         pinned_records = db.query(models.PinnedBus).filter(
             models.PinnedBus.bus_id == bus_id
         ).all()
 
-        for record in pinned_records:
-            await self.send_personal_notification(
-                record.user_id,
-                title,
-                message,
-                category,
-                data=data,
-                sound=sound
-            )
+        # Filter out excluded user
+        records_to_notify = [
+            record for record in pinned_records
+            if exclude_user_id is None or str(record.user_id) != str(exclude_user_id)
+        ]
+
+        # Send to all pinned users CONCURRENTLY
+        if records_to_notify:
+            await asyncio.gather(*[
+                self.send_personal_notification(
+                    record.user_id,
+                    title,
+                    message,
+                    category,
+                    data=data,
+                    sound=sound
+                )
+                for record in records_to_notify
+            ], return_exceptions=True)
 
         # Send FCM topic-based notification for this specific bus.
         # Each bus has a unique FCM topic (bus_{bus_id}) that users subscribe to
@@ -141,15 +182,19 @@ class NotificationService:
         # correctly per bus, even when the user is offline or not WebSocket-connected.
         topic = f"bus_{bus_id}"
         try:
-            firebase_service.send_topic_notification(
-                topic, title, message, data or {}, sound=sound
+            # Fire-and-forget topic notification
+            asyncio.create_task(
+                asyncio.to_thread(
+                    firebase_service.send_topic_notification,
+                    topic, title, message, data or {}, sound
+                )
             )
             logger.info(f"FCM topic notification sent to topic '{topic}' for bus {bus_id} with sound")
         except Exception as exc:
             logger.warning(f"FCM topic notification failed for bus {bus_id}: {exc}")
 
-        logger.info(f"Pinned bus notification '{category}' sent to {len(pinned_records)} users for bus {bus_id} with sound")
-        return len(pinned_records)
+        logger.info(f"Pinned bus notification '{category}' sent to {len(records_to_notify)} users for bus {bus_id} with sound")
+        return len(records_to_notify)
 
     async def notify_pinned_bus_tracking_started(self, db: Session, bus_id: int, bus_number: str, driver_name: str = "Driver"):
         """Notify when a driver starts live tracking for a pinned bus.
@@ -159,16 +204,19 @@ class NotificationService:
             title="Live Tracking Started",
             message=f"Your pinned bus {bus_number} has started live location sharing.",
             category="PINNED_BUS_LIVE_STARTED",
-            notificationType="location_started",
-            targetScreen="/track-bus-maps",
-            data={"bus_id": bus_id, "bus_number": bus_number}
+            data={
+                "bus_id": bus_id,
+                "bus_number": bus_number,
+                "notificationType": "location_started",
+                "targetScreen": "/track-bus-maps"
+            }
         )
 
     async def notify_pinned_bus_location_updated(self, db: Session, bus_id: int, bus_number: str):
         """Notify pinned users when bus location is updated."""
         # CRITICAL FIX: Do NOT send notifications for regular location updates
         # Only notify for significant events (started, approaching, arrived, stopped)
-        debugPrint(f"Location update for bus {bus_number} suppressed (no notification)")
+        logger.debug(f"Location update for bus {bus_number} suppressed (no notification)")
 
     async def notify_pinned_bus_approaching_stop(self, db: Session, bus_id: int, bus_number: str, stop_name: str, distance_km: float):
         """Notify pinned users when bus is approaching their selected stop."""
@@ -181,7 +229,14 @@ class NotificationService:
         else:
             return  # Don't notify beyond 2km
 
-        data = {"bus_id": bus_id, "bus_number": bus_number, "stop_name": stop_name, "distance_km": distance_km}
+        data = {
+            "bus_id": bus_id,
+            "bus_number": bus_number,
+            "stop_name": stop_name,
+            "distance_km": distance_km,
+            "notificationType": "bus_arriving" if distance_km <= 0.5 else "bus_approaching",
+            "targetScreen": "/track-bus-maps"
+        }
 
         if distance_km <= 0.5:
             await self.notify_pinned_users(
@@ -207,7 +262,13 @@ class NotificationService:
             title=f"Bus {bus_number} Has Reached!",
             message=f"Your pinned bus {bus_number} has reached {stop_name}.",
             category="PINNED_BUS_REACHED",
-            data={"bus_id": bus_id, "bus_number": bus_number, "stop_name": stop_name}
+            data={
+                "bus_id": bus_id,
+                "bus_number": bus_number,
+                "stop_name": stop_name,
+                "notificationType": "bus_arrived",
+                "targetScreen": "/track-bus-maps"
+            }
         )
 
     async def notify_pinned_bus_trip_completed(self, db: Session, bus_id: int, bus_number: str):
@@ -217,9 +278,12 @@ class NotificationService:
             title=f"Bus {bus_number} Trip Completed",
             message=f"Your pinned bus {bus_number} has completed its trip.",
             category="PINNED_BUS_TRIP_COMPLETED",
-            notificationType="location_stopped",
-            targetScreen="/track-bus-maps",
-            data={"bus_id": bus_id, "bus_number": bus_number}
+            data={
+                "bus_id": bus_id,
+                "bus_number": bus_number,
+                "notificationType": "location_stopped",
+                "targetScreen": "/track-bus-maps"
+            }
         )
 
     async def notify_student_shared_location(self, db: Session, bus_id: int, bus_number: str, student_id: str = None):
@@ -231,7 +295,13 @@ class NotificationService:
             title="Live Location Updated",
             message=f"Your pinned bus {bus_number} location has been updated by a community contributor.",
             category="COMMUNITY_LOCATION_UPDATE",
-            data={"bus_id": bus_id, "bus_number": bus_number, "shared_by": "student"},
+            data={
+                "bus_id": bus_id,
+                "bus_number": bus_number,
+                "shared_by": "student",
+                "notificationType": "location_updated",
+                "targetScreen": "/track-bus-maps"
+            },
             exclude_user_id=student_id
         )
 

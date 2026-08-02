@@ -155,6 +155,19 @@ class FileService extends ChangeNotifier {
     }
   }
 
+  /// Build the full URL for a document path
+  String _buildFullUrl(String path) {
+    if (path.startsWith('http')) {
+      return path;
+    }
+    // Path is relative like /uploads/filename
+    // The baseUrl is like https://domain/api
+    // We need to strip /api to get the root domain
+    final baseUrl = ApiService.baseUrl;
+    final rootUrl = baseUrl.replaceFirst(RegExp(r'/api$'), '');
+    return '$rootUrl$path';
+  }
+
   Future<void> openFile(BuildContext context, UploadedFile file) async {
     // If file is from backend, open/download via backend URL
     if (file.path.startsWith('/') || file.path.contains('http')) {
@@ -167,11 +180,8 @@ class FileService extends ChangeNotifier {
       );
 
       try {
-        String fullUrl = file.path;
-        if (fullUrl.startsWith('/')) {
-          final baseUrlWithoutApi = ApiService.baseUrl.replaceAll('/api', '');
-          fullUrl = '$baseUrlWithoutApi$fullUrl';
-        }
+        // Build the full URL correctly
+        String fullUrl = _buildFullUrl(file.path);
 
         final token = await ApiService.getToken();
         final headers = {

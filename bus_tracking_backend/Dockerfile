@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 # Copy application code
 COPY . .
 
+# Create uploads directory
+RUN mkdir -p /app/bus_tracking_backend/uploads
+
 # Expose port
 EXPOSE 8000
 

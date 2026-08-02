@@ -7,7 +7,7 @@ restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 
 [[deploy.volumes]]
-mountPath = "/app/uploads"
+mountPath = "/app/bus_tracking_backend/uploads"
 name = "uploads"
 
 [deploy.env]

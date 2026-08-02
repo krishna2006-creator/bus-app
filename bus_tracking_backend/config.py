@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     MINIO_BUCKET_ANNOUNCEMENTS: str = os.getenv("MINIO_BUCKET_ANNOUNCEMENTS", "announcements")
     CORS_ORIGINS: str = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:8000,http://10.0.2.2:8000,http://10.0.2.2:3000,http://192.168.29.123:8000,http://192.168.1.100:8000,https://bus-tracking-Uios.up.railway.app"
+        "http://localhost:3000,http://127.0.0.1:8000,http://10.0.2.2:8000,http://10.0.2.2:3000,http://192.168.29.123:8000,http://192.168.1.100:8000,https://bus-app-production-2836.up.railway.app"
     )
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
