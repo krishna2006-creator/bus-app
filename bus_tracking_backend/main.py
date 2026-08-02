@@ -63,7 +63,7 @@ _init_firebase()
 
 # Database init
 Base.metadata.create_all(bind=engine)
-init_database()
+# init_database()  # Commented out to prevent startup hang - tables already created by create_all
 
 app = FastAPI(title="Agni Bus Tracking API")
 
