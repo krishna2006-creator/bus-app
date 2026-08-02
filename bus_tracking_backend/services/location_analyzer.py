@@ -31,6 +31,8 @@ class LocationAnalyzer:
         self.notified_users = set()  # Tracks dispatched notifications to prevent duplicates
         # Track whether we've sent "tracking started" notification per bus_id
         self._tracking_started_notified = set()
+        # Track whether we've sent "student sharing started" notification per user_id
+        self._student_sharing_notified = set()
         # Track last distance bracket notified per (bus_id, user_id)
         self._last_distance_bracket = {}
         # Track bus positions for traffic delay detection
@@ -113,14 +115,10 @@ class LocationAnalyzer:
                 db, bus_id, bus_number, driver_name
             )
 
-        # 1b. NOTIFY: Location Updated (every update from driver)
-        elif role == "driver":
-            await notification_service.notify_pinned_bus_location_updated(
-                db, bus_id, bus_number
-            )
-
-        # 2. NOTIFY: Student shared location (exclude the sharer from notification)
-        if is_student_sharing:
+        # 2. NOTIFY: Student shared location (same behavior as driver)
+        # Only notify ONCE when student FIRST starts sharing, not on every update
+        if is_student_sharing and u_id not in self._student_sharing_notified:
+            self._student_sharing_notified.add(u_id)
             await notification_service.notify_student_shared_location(db, bus_id, bus_number, student_id=u_id)
 
         # 3. NOTIFY: Geofence distance-based alerts for ALL stops this bus serves
@@ -180,7 +178,7 @@ class LocationAnalyzer:
             self._bus_position_history.pop(bus_id, None)
             self._traffic_delay_notified.discard(bus_id)
 
-            logger.info(f"Auto-stopped sharing for bus {bus_id} - reached college")
+        logger.info(f"Auto-stopped sharing for bus {bus_id} - reached college")
 
     async def _check_traffic_delay(self, db: Session, bus_id: int, lat: float, lng: float, speed: float):
         """Check if bus is stuck in traffic for >10 minutes and send notification."""
@@ -301,6 +299,10 @@ class LocationAnalyzer:
             self._tracking_started_notified.discard(bus_id)
             self._bus_position_history.pop(bus_id, None)
             self._traffic_delay_notified.discard(bus_id)
+
+        # Clean up student sharing state when sharing stops
+        if role == "student" and u_id:
+            self._student_sharing_notified.discard(u_id)
 
         return await self.remove_location(u_id, bus_id, role)
 
