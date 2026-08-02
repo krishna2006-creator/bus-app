@@ -90,12 +90,13 @@ class _ManageDriversPageState extends State<ManageDriversPage> {
     );
   }
 
-  void _openEditDialog(BuildContext context, User driver) {
+    void _openEditDialog(BuildContext context, User driver) {
     final idCtrl = TextEditingController(text: driver.id);
     final passCtrl = TextEditingController(text: driver.password ?? '');
     final nameCtrl = TextEditingController(text: driver.name ?? '');
     final phoneCtrl = TextEditingController(text: driver.phone ?? '');
     final busCtrl = TextEditingController(text: driver.assignedBusNumber ?? '');
+    bool obscurePassword = true;
 
     final auth = context.read<AuthService>();
     final messenger = ScaffoldMessenger.of(context);
@@ -114,10 +115,27 @@ class _ManageDriversPageState extends State<ManageDriversPage> {
                     controller: idCtrl,
                     decoration: const InputDecoration(labelText: 'User ID')),
                 const SizedBox(height: 8),
-                TextField(
-                    controller: passCtrl,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                    obscureText: true),
+                StatefulBuilder(
+                  builder: (ctx, setDialogState) {
+                    return TextField(
+                        controller: passCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword ? Icons.visibility_off : Icons.visibility,
+                              color: AppColors.grey600,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                obscurePassword = !obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        obscureText: obscurePassword);
+                  },
+                ),
                 const SizedBox(height: 8),
                 TextField(
                     controller: nameCtrl,
