@@ -63,7 +63,7 @@ _init_firebase()
 
 # Database init
 Base.metadata.create_all(bind=engine)
-# init_database()  # Commented out to prevent startup hang - tables already created by create_all
+init_database()  # Ensure seed data exists (Railway needs this for fresh DB)
 
 app = FastAPI(title="Agni Bus Tracking API")
 
