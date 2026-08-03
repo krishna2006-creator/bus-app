@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:agni_college_bus_tracker/models/prediction_models.dart';
 import 'package:agni_college_bus_tracker/models/bus_location.dart';
 import 'package:agni_college_bus_tracker/models/user.dart';
@@ -14,33 +15,33 @@ import 'package:agni_college_bus_tracker/services/live_tracking_service.dart';
 class StopPredictionProvider with ChangeNotifier {
   LiveTrackingService? _liveTrackingService;
 
-  /// Inject tracking service to sync pinning with live tracking UI
   void setLiveTrackingService(LiveTrackingService service) {
     _liveTrackingService = service;
   }
 
-  // State
   BusStop? _selectedStop;
   BusStop? _previewStop;
   List<PredictionResponse> _predictions = [];
-  PredictionResponse? _prediction; // Keep for backward compatibility
+  PredictionResponse? _prediction;
   BusLocation? _liveBusLocation;
   List<BusStop> _searchResults = [];
-  List<BusStop> _allStops = []; // Add all stops
+  List<BusStop> _allStops = [];
   bool _isLoading = false;
   String? _error;
-  bool _isFollowingBus = true; // Default to enabled
+  bool _isFollowingBus = true;
 
-  // WebSocket
+  // Live tracking data (admin-style)
+  double _busDistanceKm = 0.0;
+  double _busSpeedKmh = 0.0;
+  int _busEtaMinutes = 0;
+  String _busStatus = 'Waiting for bus...';
+  bool _isBusLive = false;
+
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
-
-  /// Polling fallback timer for predictions - keeps predictions fresh
-  /// when the WebSocket endpoint is unavailable
   Timer? _predictionPollTimer;
-  static const _pollInterval = Duration(seconds: 5);
+  static const _pollInterval = Duration(seconds: 10);
 
-  // Getters
   BusStop? get selectedStop => _selectedStop;
   BusStop? get previewStop => _previewStop;
   List<PredictionResponse> get predictions => _predictions;
@@ -51,6 +52,13 @@ class StopPredictionProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isFollowingBus => _isFollowingBus;
   String? get error => _error;
+
+  // Live tracking getters
+  double get busDistanceKm => _busDistanceKm;
+  double get busSpeedKmh => _busSpeedKmh;
+  int get busEtaMinutes => _busEtaMinutes;
+  String get busStatus => _busStatus;
+  bool get isBusLive => _isBusLive;
 
   Future<String> _getWsUrl() async {
     final baseUrl = ApiService.baseUrl;
@@ -63,25 +71,23 @@ class StopPredictionProvider with ChangeNotifier {
         : '$wsBase/ws/stop-prediction-live';
   }
 
-  // --- Initialization ---
   void init() {
     _requestLocationPermission();
-    _loadAllStops(); // Load all stops upfront
-    _loadUserBoardingStop(); // Load existing boarding stop
+    _loadAllStops();
+    _loadUserBoardingStop();
     _connectWebSocket();
   }
 
-  // Async init for compatibility with token loading
   Future<void> initAsync() async {
     await _requestLocationPermission();
-    await _loadAllStops(); // Load all stops upfront
+    await _loadAllStops();
     await _loadUserBoardingStop();
     await _connectWebSocketAsync();
   }
 
-  /// Load all available stops
   Future<void> _loadAllStops() async {
     _isLoading = true;
+    _error = null;
     notifyListeners();
     try {
       final headers = await ApiService.getHeaders();
@@ -92,59 +98,79 @@ class StopPredictionProvider with ChangeNotifier {
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         _allStops = data.map((json) => BusStop.fromJson(json)).toList();
-        _searchResults = _allStops; // Show all by default
+        _searchResults = List.from(_allStops);
       } else {
         _error = "Failed to load stops: ${response.statusCode}";
+        _searchResults = [];
       }
     } catch (e) {
       debugPrint("Error loading stops: $e");
       _error = "Failed to load boarding points";
+      _searchResults = [];
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  /// Load the user's currently selected boarding stop from the backend
   Future<void> _loadUserBoardingStop() async {
-    try {
-      final headers = await ApiService.getHeaders();
-      final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/students/me/boarding_stop'),
-        headers: headers,
+    // 1. First try local persisted selection (survives app restarts)
+    final prefs = await SharedPreferences.getInstance();
+    final savedLat = prefs.getDouble('boarding_lat');
+    final savedLng = prefs.getDouble('boarding_lng');
+    final savedName = prefs.getString('boarding_name');
+
+    if (savedLat != null && savedLng != null) {
+      _selectedStop = BusStop(
+        id: prefs.getInt('boarding_id') ?? 0,
+        name: savedName ?? 'Selected Stop',
+        location: LatLng(savedLat, savedLng),
       );
-
-      if (response.statusCode == 200 &&
-          response.body.isNotEmpty &&
-          response.body.trim() != 'null') {
-        final data = json.decode(response.body);
-        if (data != null) {
-          _selectedStop = BusStop.fromJson(data);
-          if (_selectedStop != null) {
-            await _fetchPredictionsForStop(_selectedStop!.id);
-            // Start polling as fallback to WebSocket
-            _startPredictionPolling(_selectedStop!.id);
-          }
-          notifyListeners();
-          return;
-        }
+      if (_selectedStop != null) {
+        await _fetchPredictionsForStop(_selectedStop!.id);
+        _startPredictionPolling(_selectedStop!.id);
       }
+      notifyListeners();
+      return;
+    }
 
-      debugPrint(
-          "No boarding stop found for user or server error: ${response.statusCode}");
+    // 2. Fallback: try backend
+    try {
+      final boardingPoint = await ApiService.getBoardingPoint();
+      if (boardingPoint != null && boardingPoint['latitude'] != null && boardingPoint['longitude'] != null) {
+        _selectedStop = BusStop(
+          id: boardingPoint['id'] ?? 0,
+          name: boardingPoint['name'] ?? 'Selected Stop',
+          location: LatLng(
+            double.parse(boardingPoint['latitude'].toString()),
+            double.parse(boardingPoint['longitude'].toString()),
+          ),
+        );
+        if (_selectedStop != null) {
+          await _persistSelection(_selectedStop!);
+          await _fetchPredictionsForStop(_selectedStop!.id);
+          _startPredictionPolling(_selectedStop!.id);
+        }
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint("Error loading user boarding stop: $e");
     }
   }
 
-  // Request location permission
+  Future<void> _persistSelection(BusStop stop) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('boarding_lat', stop.location.latitude);
+    await prefs.setDouble('boarding_lng', stop.location.longitude);
+    await prefs.setString('boarding_name', stop.name);
+    await prefs.setInt('boarding_id', stop.id);
+  }
+
   Future<void> _requestLocationPermission() async {
     try {
-      final permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        _error = "Location permission required for stop prediction";
-        notifyListeners();
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        await Geolocator.requestPermission();
       }
     } catch (e) {
       debugPrint("Error requesting location permission: $e");
@@ -156,33 +182,39 @@ class StopPredictionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Stop tracking for the current user.
-  /// When a stop location is clicked, this stops location updates for that user
-  /// by clearing the selected stop, stopping polling, and notifying the backend.
   Future<void> stopTracking() async {
     _predictionPollTimer?.cancel();
     _channel?.sink.close();
     _channel = null;
     _reconnectTimer?.cancel();
 
-    // Clear all tracking state
     _selectedStop = null;
     _previewStop = null;
     _predictions = [];
     _prediction = null;
     _liveBusLocation = null;
-    _searchResults = _allStops;
+    _searchResults = List.from(_allStops);
     _error = null;
     _isFollowingBus = true;
+    _isBusLive = false;
+    _busDistanceKm = 0;
+    _busSpeedKmh = 0;
+    _busEtaMinutes = 0;
+    _busStatus = 'Waiting for bus...';
 
-    // Notify backend that tracking is stopped
+    // Clear persisted selection
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('boarding_lat');
+    await prefs.remove('boarding_lng');
+    await prefs.remove('boarding_name');
+    await prefs.remove('boarding_id');
+
     try {
       await ApiService.post('/tracking/stop', {});
     } catch (e) {
       debugPrint('Error notifying backend of tracking stop: $e');
     }
 
-    // Stop live tracking service sessions
     try {
       _liveTrackingService?.dispose();
     } catch (e) {
@@ -225,25 +257,25 @@ class StopPredictionProvider with ChangeNotifier {
             debugPrint('WebSocket Update: ${data['type']}');
             if (data['type'] == 'PREDICTION_UPDATE') {
               _prediction = PredictionResponse.fromJson(data['payload']);
+              // Update live tracking data from prediction
+              _busDistanceKm = _prediction?.distanceKm ?? 0;
+              _busEtaMinutes = _prediction?.etaMinutes ?? 0;
+              _busStatus = _prediction?.status ?? 'Approaching';
+              _isBusLive = true;
               notifyListeners();
             } else if (data['type'] == 'LOCATION_UPDATE') {
-              // Robust parsing for different backend payload structures
               final loc = data['payload'] ?? data['data'] ?? data;
-              final incomingBusId =
-                  (loc['bus_id'] ?? loc['id'] ?? '').toString();
+              final incomingBusId = (loc['bus_id'] ?? loc['id'] ?? '').toString();
 
-              // Allow update if it's the specific bus we track, or if we have general predictions
               bool isRelevant = false;
-              if (_prediction != null &&
-                  _prediction!.busId.toString() == incomingBusId) {
+              if (_prediction != null && _prediction!.busId.toString() == incomingBusId) {
                 isRelevant = true;
-              } else if (_predictions
-                  .any((p) => p.busId.toString() == incomingBusId)) {
+              } else if (_predictions.any((p) => p.busId.toString() == incomingBusId)) {
                 isRelevant = true;
               }
 
               if (!isRelevant && _predictions.isNotEmpty) {
-                return; // Ignore buses that aren't on our selected stop's route
+                return;
               }
 
               _liveBusLocation = BusLocation(
@@ -255,6 +287,27 @@ class StopPredictionProvider with ChangeNotifier {
                 userType: UserRole.driver,
                 isSharedByStudent: false,
               );
+
+              // Update live tracking data
+              _busSpeedKmh = _liveBusLocation!.speed;
+              _isBusLive = true;
+
+              // Calculate distance from bus to selected stop
+              if (_selectedStop != null) {
+                _busDistanceKm = _calculateDistance(
+                  _liveBusLocation!.latitude,
+                  _liveBusLocation!.longitude,
+                  _selectedStop!.location.latitude,
+                  _selectedStop!.location.longitude,
+                );
+                _busEtaMinutes = _busSpeedKmh > 5
+                    ? ((_busDistanceKm / _busSpeedKmh) * 60).round()
+                    : 0;
+                _busStatus = _busDistanceKm < 0.25
+                    ? 'Bus Arriving'
+                    : 'Bus Approaching';
+              }
+
               notifyListeners();
             }
           } catch (e) {
@@ -263,12 +316,10 @@ class StopPredictionProvider with ChangeNotifier {
         },
         onDone: () {
           debugPrint('WebSocket closed, attempting reconnection...');
-          // Don't clear predictions on WS disconnect - they were loaded via REST
           _scheduleReconnect();
         },
         onError: (e) {
           debugPrint('WebSocket error: $e');
-          // Don't clear predictions on WS error - they were loaded via REST
           _scheduleReconnect();
         },
       );
@@ -278,7 +329,30 @@ class StopPredictionProvider with ChangeNotifier {
     }
   }
 
-  // --- API Actions ---
+  double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+    const R = 6371.0; // Earth radius in km
+    final dLat = _degToRad(lat2 - lat1);
+    final dLng = _degToRad(lng2 - lng1);
+    final a = _sin2(dLat / 2) +
+        _cos(lat1) * _cos(lat2) * _sin2(dLng / 2);
+    final c = 2 * _atan2(_sqrt(a), _sqrt(1 - a));
+    return R * c;
+  }
+
+  double _degToRad(double deg) => deg * 3.141592653589793 / 180.0;
+  double _sin2(double x) => _sin(x) * _sin(x);
+  double _sin(double x) => x - (x * x * x) / 6 + (x * x * x * x * x) / 120;
+  double _cos(double x) => 1 - (x * x) / 2 + (x * x * x * x) / 24;
+  double _sqrt(double x) => x < 0 ? 0 : x * 0.5 + x / (x * 0.5 + 1);
+  double _atan2(double y, double x) {
+    if (x > 0) return _atan(y / x);
+    if (x < 0 && y >= 0) return _atan(y / x) + 3.141592653589793;
+    if (x < 0 && y < 0) return _atan(y / x) - 3.141592653589793;
+    if (x == 0 && y > 0) return 3.141592653589793 / 2;
+    if (x == 0 && y < 0) return -3.141592653589793 / 2;
+    return 0;
+  }
+  double _atan(double x) => x - (x * x * x) / 3 + (x * x * x * x * x) / 5;
 
   Future<void> searchStops(String query) async {
     final trimmedQuery = query.trim();
@@ -292,12 +366,10 @@ class StopPredictionProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Local Search (Filter existing stops)
       final localResults = _allStops.where((stop) {
         return stop.name.toLowerCase().contains(trimmedQuery.toLowerCase());
       }).toList();
 
-      // 2. Global Search (Geocoding via Nominatim)
       List<BusStop> globalResults = [];
       if (trimmedQuery.length >= 3) {
         final url = Uri.parse(
@@ -310,7 +382,7 @@ class StopPredictionProvider with ChangeNotifier {
           final List data = json.decode(response.body);
           globalResults = data.map((item) {
             return BusStop(
-              id: -1, // Mark as external result
+              id: -1,
               name: item['display_name'] ?? 'Unknown',
               location: LatLng(
                 double.parse(item['lat']),
@@ -330,26 +402,22 @@ class StopPredictionProvider with ChangeNotifier {
     }
   }
 
-  /// Select location by tapping map (Reverse Geocoding)
   Future<void> searchByLocation(LatLng location) async {
+    // Only ONE preview at a time - clear any existing preview first
     _previewStop = BusStop(
-      id: -2, // Signals a manual map pin
-      name:
-          "Dropped Pin (${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)})",
+      id: -2,
+      name: "Dropped Pin (${location.latitude.toStringAsFixed(4)}, ${location.longitude.toStringAsFixed(4)})",
       location: location,
     );
     notifyListeners();
   }
 
-  /// Update the stop currently being previewed on the map
   void setPreviewStop(BusStop? stop) {
     _previewStop = stop;
     notifyListeners();
   }
 
   Future<void> selectStop(BusStop stop) async {
-    // REDESIGN: Allow users to choose ANY point on the map
-    // No longer snapping to nearest system stop - users can pick any boarding point
     final targetStop = stop;
     debugPrint("User selected boarding point: ${targetStop.name} at ${targetStop.location.latitude}, ${targetStop.location.longitude}");
 
@@ -358,30 +426,30 @@ class StopPredictionProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final success = await ApiService.updateUserBoardingStop(targetStop.id);
+      bool success;
+      if (stop.id < 0) {
+        success = await ApiService.setBoardingPointByCoordinates(targetStop.location.latitude, targetStop.location.longitude);
+      } else {
+        success = await ApiService.updateUserBoardingStop(targetStop.id);
+      }
 
       if (success) {
         _error = null;
         _selectedStop = targetStop;
         _previewStop = null;
-        _searchResults = []; // Clear search
-        await _fetchPredictionsForStop(targetStop.id); // Fetch predictions list
-
-        // Start polling predictions every 5 seconds as a fallback
-        // to the WebSocket (which may not be available on all backends)
+        _searchResults = [];
+        // Persist locally so it survives app restarts
+        await _persistSelection(targetStop);
+        await _fetchPredictionsForStop(targetStop.id);
         _startPredictionPolling(targetStop.id);
 
-        // Automatically trigger live tracking session to "open" the dashboard widget
         if (_prediction != null && _liveTrackingService != null) {
           await _liveTrackingService!.pinBus(
-            "me", // Student ID handled by backend session
+            "me",
             _prediction!.busId.toString(),
             targetStop.id.toString(),
           );
         }
-
-        // Send notification that boarding point was selected
-        await _sendBoardingPointNotification(stop);
       } else {
         _error = "Failed to update stop";
       }
@@ -394,27 +462,28 @@ class StopPredictionProvider with ChangeNotifier {
     }
   }
 
-  /// Clear the selected stop and go back to search
   void clearSelection() {
     _predictionPollTimer?.cancel();
     _selectedStop = null;
     _previewStop = null;
     _predictions = [];
     _prediction = null;
-    _searchResults = _allStops; // Restore all stops for searching again
+    _searchResults = List.from(_allStops);
     _liveBusLocation = null;
     _error = null;
+    _isBusLive = false;
+    _busDistanceKm = 0;
+    _busSpeedKmh = 0;
+    _busEtaMinutes = 0;
+    _busStatus = 'Waiting for bus...';
     notifyListeners();
   }
 
-  /// Refresh predictions for the currently selected stop
   Future<void> refreshPredictions() async {
     if (_selectedStop == null) return;
     await _fetchPredictionsForStop(_selectedStop!.id);
   }
 
-  /// Start polling predictions for the selected stop every 5 seconds
-  /// This serves as a fallback when the WebSocket endpoint is unavailable
   void _startPredictionPolling(int stopId) {
     _predictionPollTimer?.cancel();
     _predictionPollTimer = Timer.periodic(_pollInterval, (_) async {
@@ -426,14 +495,12 @@ class StopPredictionProvider with ChangeNotifier {
     });
   }
 
-  /// Fetch list of predictions for a specific stop
   Future<void> _fetchPredictionsForStop(int stopId) async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final headers = await ApiService.getHeaders();
-      // REDESIGN: Use new endpoint that accepts any GPS coordinates
       final response = await http.get(
         Uri.parse('${ApiService.baseUrl}/predictions?stop_id=$stopId'),
         headers: headers,
@@ -441,40 +508,64 @@ class StopPredictionProvider with ChangeNotifier {
 
       if (response.statusCode == 200 && response.body.isNotEmpty) {
         final List<dynamic> data = json.decode(response.body);
-        _predictions = data
-            .map((json) =>
-                PredictionResponse.fromJson(json as Map<String, dynamic>))
+        var allPredictions = data
+            .map((json) => PredictionResponse.fromJson(json as Map<String, dynamic>))
             .toList();
-        // Sort by ETA minutes
+
+        // CRITICAL: Only track PINNED buses, not all buses
+        // Get user's pinned buses from persisted storage
+        final pinnedBuses = await _getPinnedBuses();
+
+        if (pinnedBuses.isNotEmpty) {
+          allPredictions = allPredictions
+              .where((p) => pinnedBuses.contains(p.busNumber))
+              .toList();
+        }
+
+        _predictions = allPredictions;
         _predictions.sort((a, b) => a.etaMinutes.compareTo(b.etaMinutes));
 
-        // Set first as primary prediction for backward compatibility
         if (_predictions.isNotEmpty) {
           _prediction = _predictions.first;
+          _busDistanceKm = _prediction!.distanceKm;
+          _busEtaMinutes = _prediction!.etaMinutes;
+          _busStatus = _prediction!.status;
+          _isBusLive = true;
         } else {
           _prediction = null;
+          _isBusLive = false;
         }
       } else {
         _predictions = [];
         _prediction = null;
+        _isBusLive = false;
       }
     } catch (e) {
       debugPrint("Error fetching predictions for stop $stopId: $e");
       _predictions = [];
       _prediction = null;
+      _isBusLive = false;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  Future<void> _sendBoardingPointNotification(BusStop stop) async {
+  // Helper to get pinned buses from SharedPreferences (persisted by AuthService)
+  Future<List<String>> _getPinnedBuses() async {
     try {
-      // This would be sent by the backend and received via NotificationService WebSocket
-      // For now, we can log this event for the backend to process
-      debugPrint('Student selected boarding point: ${stop.name}');
+      final prefs = await SharedPreferences.getInstance();
+      final currentUserJson = prefs.getString('currentUser');
+      if (currentUserJson != null) {
+        final userData = json.decode(currentUserJson);
+        final pinned = userData['pinnedBuses'];
+        if (pinned is List) {
+          return pinned.map((e) => e.toString()).toList();
+        }
+      }
     } catch (e) {
-      debugPrint('Error sending boarding point notification: $e');
+      debugPrint('Error reading pinned buses: $e');
     }
+    return [];
   }
 }

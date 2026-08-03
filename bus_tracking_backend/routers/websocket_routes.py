@@ -310,6 +310,21 @@ async def websocket_stop_prediction_live(
                             "timestamp": datetime.now().isoformat(),
                         })
 
+                        # ALSO send bus location so the map marker (dog.png) shows
+                        # Works for BOTH driver and student shared locations
+                        bus_loc = prediction_service.bus_coords.get(pred["bus_id"])
+                        if bus_loc:
+                            await websocket.send_json({
+                                "type": "LOCATION_UPDATE",
+                                "payload": {
+                                    "bus_id": pred["bus_id"],
+                                    "latitude": bus_loc["lat"],
+                                    "longitude": bus_loc["lon"],
+                                    "speed": bus_loc.get("speed", 0.0),
+                                },
+                                "timestamp": datetime.now().isoformat(),
+                            })
+
                         if current_phase == 1 and pred.get("distance_km", 0) < 2.0:
                             await websocket.send_json({
                                 "type": "NOTIFICATION",

@@ -193,3 +193,75 @@ def get_user_boarding_stop(db: Session, user_id: str):
     if db_user and db_user.boarding_stop_id:
         return db.query(models.BusStop).filter(models.BusStop.id == db_user.boarding_stop_id).first()
     return None
+
+# --- Custom Boarding Point (any location on map) ---
+def set_user_boarding_coords(db: Session, user_id: str, lat: float, lng: float):
+    """
+    Sets a custom boarding point by GPS coordinates (not tied to a system stop).
+    Clears boarding_stop_id so the custom coords are used as the boarding point.
+    """
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user:
+        db_user.boarding_stop_id = None
+        db_user.custom_boarding_lat = lat
+        db_user.custom_boarding_lng = lng
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    return None
+
+def get_user_boarding_coords(db: Session, user_id: str):
+    """
+    Returns the user's boarding point location — either from the system stop
+    or from custom coordinates.
+    """
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        return None
+    # Prefer custom coordinates if set
+    if db_user.custom_boarding_lat is not None and db_user.custom_boarding_lng is not None:
+        return {
+            "id": -1,
+            "name": "Custom Location",
+            "latitude": db_user.custom_boarding_lat,
+            "longitude": db_user.custom_boarding_lng,
+            "stop_order": 0,
+            "scheduled_time": None,
+        }
+    # Fallback to system stop
+    if db_user.boarding_stop_id:
+        stop = db.query(models.BusStop).filter(models.BusStop.id == db_user.boarding_stop_id).first()
+        if stop:
+            return {
+                "id": stop.id,
+                "name": stop.stop_name,
+                "latitude": stop.latitude,
+                "longitude": stop.longitude,
+                "stop_order": stop.stop_order,
+                "scheduled_time": stop.scheduled_time,
+            }
+    return None
+
+# --- User Dismissed Items (personal delete memory) ---
+def dismiss_item(db: Session, user_id: str, item_type: str, item_id: int):
+    """Records that a user has dismissed (hidden) an announcement or document."""
+    existing = db.query(models.UserDismissedItem).filter(
+        models.UserDismissedItem.user_id == user_id,
+        models.UserDismissedItem.item_type == item_type,
+        models.UserDismissedItem.item_id == item_id,
+    ).first()
+    if not existing:
+        dismissed = models.UserDismissedItem(
+            user_id=user_id, item_type=item_type, item_id=item_id
+        )
+        db.add(dismissed)
+        db.commit()
+    return True
+
+def get_dismissed_item_ids(db: Session, user_id: str, item_type: str):
+    """Returns a list of item IDs that the user has dismissed for a given type."""
+    records = db.query(models.UserDismissedItem).filter(
+        models.UserDismissedItem.user_id == user_id,
+        models.UserDismissedItem.item_type == item_type,
+    ).all()
+    return [r.item_id for r in records]

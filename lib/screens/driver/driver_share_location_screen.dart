@@ -97,6 +97,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
         distanceFilter: 0,
       ),
     ).listen((Position pos) {
+      // Fire-and-forget: don't block UI on HTTP
       _updateLocation(pos);
       _sendViaWebSocket(pos);
     }, onError: (e) {
@@ -138,7 +139,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
     }
   }
 
-  Future<void> _updateLocation(Position pos) async {
+  void _updateLocation(Position pos) {
     if (!mounted) return;
     final locService = context.read<LocationService>();
     final busLoc = BusLocation(
@@ -157,20 +158,20 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
       _speed = pos.speed * 3.6;
       _statusMessage = 'Updated - $_updateCount snaps';
     });
-    try {
-      final busId = int.tryParse(_busNumber ?? '');
-      if (busId != null) {
-        await ApiService.postPublicLocation(
-            busId, pos.latitude, pos.longitude, true,
-            speed: pos.speed * 3.6);
-      }
-    } catch (_) {}
+
+    // Fire-and-forget HTTP: don't block UI on network
+    final busId = int.tryParse(_busNumber ?? '');
+    if (busId != null) {
+      ApiService.postPublicLocation(
+          busId, pos.latitude, pos.longitude, true,
+          speed: pos.speed * 3.6);
+    }
   }
 
-  /// Auto-refresh location every 2 seconds for accurate real-time tracking
+  /// Auto-refresh location every 3 seconds for accurate real-time tracking
   void _startAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (!mounted || !_isSharing) return;
       try {
         final pos = await Geolocator.getCurrentPosition(
@@ -178,6 +179,7 @@ class _DriverShareLocationScreenState extends State<DriverShareLocationScreen> {
             accuracy: LocationAccuracy.high,
           ),
         );
+        // Don't await _updateLocation here — fire-and-forget
         _updateLocation(pos);
         _sendViaWebSocket(pos);
       } catch (e) {

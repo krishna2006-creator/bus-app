@@ -81,8 +81,8 @@ class _AdminLiveTrackingMapViewState extends State<AdminLiveTrackingMapView> {
   }
 
   void _startAutoRefresh() {
-    // 1 second polling keeps the live feel snappy.
-    _refreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // 3 second polling reduces jank while keeping the map live.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted && _isAutoRefresh) {
         _updateMapElements();
       }
@@ -104,6 +104,13 @@ class _AdminLiveTrackingMapViewState extends State<AdminLiveTrackingMapView> {
           .where((loc) => user.pinnedBuses.contains(loc.busNumber))
           .toList();
     }
+
+    // Skip setState if count and timestamps haven't changed (reduces jank)
+    final newSignature = '${locationsToShow.length}:${allLocations.map((l) => l.timestamp.millisecondsSinceEpoch).join(",")}';
+    if (_allMarkers.isNotEmpty && _lastSignature == newSignature) {
+      return;
+    }
+    _lastSignature = newSignature;
 
     final markers = <Marker>[];
 
@@ -179,6 +186,8 @@ class _AdminLiveTrackingMapViewState extends State<AdminLiveTrackingMapView> {
       });
     }
   }
+
+  String? _lastSignature;
 
   String _busTooltip(BusLocation loc, bool isPinned) {
     var tooltip = 'Bus #${loc.busNumber}\n';

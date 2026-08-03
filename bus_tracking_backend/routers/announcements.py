@@ -21,7 +21,21 @@ def read_announcements(
     db: Session = Depends(get_db),
     current_user: user_schemas.User = Depends(get_current_user)
 ):
-    return crud.get_announcements(db, target_role=normalize_role(current_user.role))
+    raw_announcements = crud.get_announcements(db, target_role=normalize_role(current_user.role))
+    # Filter out items dismissed by this user (personal delete memory)
+    dismissed_ids = set(crud.get_dismissed_item_ids(db, current_user.id, "announcement"))
+    return [a for a in raw_announcements if a.id not in dismissed_ids]
+
+@router.delete("/{announcement_id}/dismiss", status_code=status.HTTP_200_OK)
+def dismiss_announcement(
+    announcement_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_schemas.User = Depends(get_current_user)
+):
+    """Student/Staff: Dismiss (hide) an announcement from your personal view only.
+    Does NOT delete it globally - admin/staff can still see it. Your dismissal persists."""
+    crud.dismiss_item(db, current_user.id, "announcement", announcement_id)
+    return {"status": "dismissed", "message": "Announcement dismissed from your view"}
 
 @router.post("", response_model=announcement_schemas.Announcement)
 @router.post("/", response_model=announcement_schemas.Announcement)

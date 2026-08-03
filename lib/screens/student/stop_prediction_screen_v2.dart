@@ -137,6 +137,30 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
     _searchFocus.requestFocus();
   }
 
+  Widget _buildLiveInfo(String label, String value, {Color? color}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color ?? Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
   void _centerToCurrentLocation() async {
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -208,16 +232,21 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
       );
     }
 
-    // Bus location marker
+    // Bus location marker - use dog.png icon
     if (busLocation != null) {
       markers.add(
         Marker(
-          width: 80,
-          height: 80,
+          width: 60,
+          height: 60,
           point: LatLng(busLocation.latitude, busLocation.longitude),
           child: Tooltip(
-            message: 'Bus',
-            child: Icon(Icons.directions_bus, color: Colors.orange, size: 32),
+            message: 'Bus ${busLocation.busNumber}',
+            child: Image.asset(
+              'assets/dog.png',
+              width: 50,
+              height: 50,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       );
@@ -280,6 +309,24 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.busapp.victory',
                   ),
+                  // Road line: bus -> boarding point -> college (admin-style)
+                  if (provider.liveBusLocation != null &&
+                      provider.selectedStop != null)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: [
+                            LatLng(provider.liveBusLocation!.latitude,
+                                provider.liveBusLocation!.longitude),
+                            provider.selectedStop!.location,
+                            const LatLng(AppConfig.collegeLatitude,
+                                AppConfig.collegeLongitude),
+                          ],
+                          color: Colors.blue,
+                          strokeWidth: 4,
+                        ),
+                      ],
+                    ),
                   MarkerLayer(
                     markers: _buildMarkers(provider),
                   ),
@@ -507,80 +554,69 @@ class _StopPredictionScreenV2State extends State<StopPredictionScreenV2> {
                             ],
                           ),
 
-                          // ETA information
-                          if (prediction != null) ...[
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(8),
+                          // Live Tracking Info (admin-style: distance, speed, ETA)
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: provider.isBusLive
+                                  ? Colors.green.withValues(alpha: 0.1)
+                                  : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: provider.isBusLive
+                                    ? Colors.green
+                                    : Colors.grey[300]!,
                               ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'ETA',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                      Text(
-                                        '${prediction.etaMinutes} min',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Distance',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                      Text(
-                                        '${prediction.distanceKm.toStringAsFixed(1)} km',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Status',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                      Text(
-                                        prediction.trafficLevel,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _buildLiveInfo(
+                                      'Status',
+                                      provider.busStatus,
+                                      color: provider.isBusLive
+                                          ? Colors.green
+                                          : Colors.grey,
+                                    ),
+                                    _buildLiveInfo(
+                                      'Distance',
+                                      '${provider.busDistanceKm.toStringAsFixed(1)} km',
+                                    ),
+                                    _buildLiveInfo(
+                                      'Speed',
+                                      '${provider.busSpeedKmh.toStringAsFixed(0)} km/h',
+                                    ),
+                                    _buildLiveInfo(
+                                      'ETA',
+                                      '${provider.busEtaMinutes} min',
+                                    ),
+                                  ],
+                                ),
+                                if (!provider.isBusLive) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Waiting for bus to start sharing location...',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                      fontStyle: FontStyle.italic,
+                                    ),
                                   ),
                                 ],
+                              ],
+                            ),
+                          ),
+                          if (prediction != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Route: ${prediction.routeName} • Bus ${prediction.busNumber}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
                               ),
                             ),
                           ],

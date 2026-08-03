@@ -64,8 +64,9 @@ class AuthService extends ChangeNotifier {
 
         final result = await fetchMe();
         if (result == 'expired') {
-          debugPrint('Auth: Token expired, clearing session');
-          await logout();
+          // Lifetime token (365 days) — don't force logout on expiry.
+          // Keep the local session so the user stays logged in (offline mode).
+          debugPrint('Auth: Token expired, keeping local session (no forced logout)');
         } else if (result == 'ok') {
           debugPrint('Auth: Session valid, user authenticated');
         } else {
@@ -157,7 +158,7 @@ class AuthService extends ChangeNotifier {
           _token = data['access_token'];
           debugPrint('LOGIN: Token received');
 
-          final prefs = await SharedPreferences.getInstance();
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', _token!);
 
           final fetchResult = await fetchMe();

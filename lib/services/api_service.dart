@@ -29,11 +29,9 @@ class ApiService {
         }),
       );
       if (response.statusCode == 200) {
-        // Success
         debugPrint('Location posted successfully');
       } else {
-        debugPrint(
-            'Failed to post public location: ${response.statusCode} - ${response.body}');
+        debugPrint('Failed to post public location: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       debugPrint('Exception while posting public location: $e');
@@ -191,8 +189,7 @@ class ApiService {
         return true;
       }
 
-      debugPrint(
-          'Primary boarding stop update failed: ${response.statusCode} ${response.body}');
+      debugPrint('Primary boarding stop update failed: ${response.statusCode} ${response.body}');
       if (response.statusCode == 404 || response.statusCode == 405) {
         final fallbackResponse =
             await http.put(fallbackUrl, headers: await getHeaders());
@@ -201,8 +198,7 @@ class ApiService {
           debugPrint('Fallback boarding stop update succeeded');
           return true;
         }
-        debugPrint(
-            'Fallback boarding stop update failed: ${fallbackResponse.statusCode} ${fallbackResponse.body}');
+        debugPrint('Fallback boarding stop update failed: ${fallbackResponse.statusCode} ${fallbackResponse.body}');
       }
       return false;
     } catch (e) {
@@ -211,6 +207,58 @@ class ApiService {
     }
   }
 
+  // ==================== NEW: ANY LOCATION BOARDING POINT ====================
+  // NOTE: baseUrl already ends with /api, so paths here must NOT start with /api
+  static Future<bool> setBoardingPointByCoordinates(double lat, double lng) async {
+    final url = Uri.parse('$baseUrl/boarding_point_coords');
+    try {
+      final response = await http.post(
+        url,
+        headers: await getHeaders(),
+        body: json.encode({'latitude': lat, 'longitude': lng}),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Exception while setting boarding point coords: $e');
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getBoardingPoint() async {
+    final url = Uri.parse('$baseUrl/boarding_point');
+    try {
+      final response = await http.get(url, headers: await getHeaders());
+      if (response.statusCode == 200) return json.decode(response.body);
+    } catch (e) {
+      debugPrint('Exception while getting boarding point: $e');
+    }
+    return null;
+  }
+
+  // ==================== NEW: DISMISS ENDPOINTS ====================
+  static Future<bool> dismissAnnouncement(int announcementId) async {
+    final url = Uri.parse('$baseUrl/announcements/$announcementId/dismiss');
+    try {
+      final response = await http.delete(url, headers: await getHeaders());
+      return response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Exception while dismissing announcement: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> dismissDocument(int documentId) async {
+    final url = Uri.parse('$baseUrl/documents/$documentId/dismiss');
+    try {
+      final response = await http.delete(url, headers: await getHeaders());
+      return response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Exception while dismissing document: $e');
+      return false;
+    }
+  }
+
+  // ==================== EXISTING METHODS ====================
   static Future<List<dynamic>?> getPredictions(int stopId) async {
     final url = Uri.parse('$baseUrl/predictions?stop_id=$stopId');
     try {

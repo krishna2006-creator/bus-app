@@ -26,6 +26,14 @@ class PredictionResponse {
   final bool isToCollege;
   final DateTime arrivalTime;
 
+  /// Human-readable status derived from distance/ETA
+  String get status {
+    if (distanceKm < 0.25) return 'Bus Arriving';
+    if (distanceKm < 1.0) return 'Bus Very Close';
+    if (distanceKm < 3.0) return 'Bus Approaching';
+    return 'Bus On The Way';
+  }
+
   PredictionResponse({
     required this.busId,
     required this.busNumber,

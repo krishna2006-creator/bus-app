@@ -22,7 +22,7 @@ class BusService extends ChangeNotifier {
       if (busesJson != null) {
         try {
           final List decoded = json.decode(busesJson);
-          _buses = decoded.map((e) => Bus.fromJson(e)).toList();
+          _buses = decoded.map((e) => Bus.fromJson(e as Map<String, dynamic>)).toList();
         } catch (e) {
           debugPrint('Error loading buses: $e');
           await _loadDefaultBuses();
@@ -31,6 +31,14 @@ class BusService extends ChangeNotifier {
         await _loadDefaultBuses();
       }
     }
+
+    // Sort buses by bus number numerically (1, 2, 3, ..., 10, 11, ...)
+    _buses.sort((a, b) {
+      final aNum = int.tryParse(a.busNumber) ?? 0;
+      final bNum = int.tryParse(b.busNumber) ?? 0;
+      return aNum.compareTo(bNum);
+    });
+
     notifyListeners();
   }
 

@@ -125,6 +125,20 @@ def _migrate_columns():
                     print("Added bus_room_id column to users table")
                 except Exception as exc:
                     print(f"bus_room_id migration skipped/failed: {exc}")
+            if 'custom_boarding_lat' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lat FLOAT"))
+                    print("Added custom_boarding_lat column to users table")
+                except Exception as exc:
+                    print(f"custom_boarding_lat migration skipped/failed: {exc}")
+            if 'custom_boarding_lng' not in columns:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lng FLOAT"))
+                    print("Added custom_boarding_lng column to users table")
+                except Exception as exc:
+                    print(f"custom_boarding_lng migration skipped/failed: {exc}")
         if 'buses' in inspector.get_table_names():
             columns = {col['name'] for col in inspector.get_columns('buses')}
             if 'is_active' not in columns:
@@ -167,6 +181,25 @@ def _migrate_columns():
                     print("Added sms_enabled column to notification_settings table")
                 except Exception as exc:
                     print(f"sms_enabled migration skipped/failed: {exc}")
+        # Ensure user_dismissed_items table exists for the personal dismiss feature
+        if 'user_dismissed_items' not in table_names:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS user_dismissed_items (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id VARCHAR NOT NULL,
+                            item_type VARCHAR NOT NULL,
+                            item_id INTEGER NOT NULL,
+                            dismissed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY(user_id) REFERENCES users(id)
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_dismissed_user ON user_dismissed_items(user_id)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_dismissed_type ON user_dismissed_items(item_type, item_id)"))
+                print("Created user_dismissed_items table")
+            except Exception as exc:
+                print(f"user_dismissed_items table creation failed: {exc}")
     except Exception as exc:
         print(f"Migration column check warning (non-fatal): {exc}")
 
@@ -179,6 +212,18 @@ def reinitialize_database():
             try:
                 with engine.begin() as conn:
                     conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
+            except Exception:
+                pass
+        if 'custom_boarding_lat' not in columns:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lat FLOAT"))
+            except Exception:
+                pass
+        if 'custom_boarding_lng' not in columns:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lng FLOAT"))
             except Exception:
                 pass
         columns = {col['name'] for col in inspector.get_columns('buses')}

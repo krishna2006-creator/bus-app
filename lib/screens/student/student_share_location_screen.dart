@@ -41,7 +41,7 @@ class _StudentShareLocationScreenState
   double _speed = 0;
   String _statusMessage = 'Starting location sharing...';
 
-  /// Auto-refresh timer ensures location updates every 2 seconds
+  /// Auto-refresh timer ensures location updates every 3 seconds
   /// for accurate real-time location sharing
   Timer? _autoRefreshTimer;
 
@@ -99,13 +99,14 @@ class _StudentShareLocationScreenState
           distanceFilter: 0,
         ),
       ).listen((Position pos) {
+        // Fire-and-forget: don't block UI on HTTP
         _updateLocationLocallyAndOnServer(pos);
       }, onError: (e) {
         debugPrint('Geolocator stream error: $e');
         _setStatus('Error: $e', isError: true);
       });
 
-      /// Auto-refresh location every 2 seconds for accurate real-time sharing
+      /// Auto-refresh location every 3 seconds for accurate real-time sharing
       _startAutoRefresh();
     } catch (e) {
       debugPrint('Error in _startSharing: $e');
@@ -113,10 +114,10 @@ class _StudentShareLocationScreenState
     }
   }
 
-  /// Auto-refresh location every 2 seconds for accurate real-time sharing
+  /// Auto-refresh location every 3 seconds for accurate real-time sharing
   void _startAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       if (!mounted || !_isSharing) return;
       try {
         final pos = await Geolocator.getCurrentPosition(
@@ -124,7 +125,8 @@ class _StudentShareLocationScreenState
             accuracy: LocationAccuracy.high,
           ),
         );
-        await _updateLocationLocallyAndOnServer(pos);
+        // Don't await here — fire-and-forget to avoid UI lag
+        _updateLocationLocallyAndOnServer(pos);
       } catch (e) {
         debugPrint('Auto-refresh location error: $e');
       }
@@ -140,7 +142,7 @@ class _StudentShareLocationScreenState
     _locationChannel = WebSocketChannel.connect(uri);
   }
 
-  Future<void> _updateLocationLocallyAndOnServer(Position pos) async {
+  void _updateLocationLocallyAndOnServer(Position pos) {
     try {
       final authService = context.read<AuthService>();
       final user = authService.currentUser;
@@ -182,8 +184,9 @@ class _StudentShareLocationScreenState
         }));
       }
 
+      // Fire-and-forget HTTP: don't block UI on network
       try {
-        await ApiService.postPublicLocation(
+        ApiService.postPublicLocation(
           widget.bus.id,
           pos.latitude,
           pos.longitude,
@@ -432,7 +435,7 @@ class _StudentShareLocationScreenState
         locationSettings:
             const LocationSettings(accuracy: LocationAccuracy.high),
       );
-      await _updateLocationLocallyAndOnServer(pos);
+      _updateLocationLocallyAndOnServer(pos);
       _setStatus('Location refreshed');
     } catch (e) {
       _setStatus('Refresh failed: $e', isError: true);

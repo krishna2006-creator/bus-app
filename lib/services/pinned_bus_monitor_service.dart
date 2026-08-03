@@ -67,7 +67,10 @@ class PinnedBusMonitorService extends ChangeNotifier {
     _monitorTimer = null;
     _locationCacheTimer?.cancel();
     _locationCacheTimer = null;
-    _notifiedBuses.clear();
+    // CRITICAL FIX: Do NOT clear _notifiedBuses here - we want to remember
+    // which buses already sent "started" notification for the entire app session
+    // This prevents duplicate notifications when bus location temporarily disappears
+    // and reappears, or when monitoring restarts
     _trackingData.clear();
     _lastNotificationTime.clear();
     notifyListeners();

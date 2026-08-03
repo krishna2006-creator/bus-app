@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..database.database import get_db
 from ..database import models
+from ..database import crud
 from ..schemas import user as user_schemas
 from ..services.notification_service import notification_service
 from ..utils.auth_utils import get_current_user
@@ -54,6 +55,9 @@ async def list_documents(
                 description=doc.description,
                 category=doc.category
             ))
+        # Filter out documents dismissed by this user (personal delete memory)
+        dismissed_ids = set(crud.get_dismissed_item_ids(db, current_user.id, "document"))
+        documents = [d for d in documents if d.id not in dismissed_ids]
         return documents
 
     # Fallback: List all files in uploads directory
@@ -208,7 +212,7 @@ async def delete_document(
     db: Session = Depends(get_db),
     current_user: user_schemas.User = Depends(get_current_user)
 ):
-    """Admin/Staff: Delete a document."""
+    """Admin/Staff: Delete a document globally."""
     if current_user.role not in ["admin", "staff"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
     
@@ -226,3 +230,14 @@ async def delete_document(
     db.commit()
     
     return {"status": "success", "message": f"Document '{doc.name}' deleted"}
+
+@router.delete("/{document_id}/dismiss", status_code=status.HTTP_200_OK)
+def dismiss_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: user_schemas.User = Depends(get_current_user)
+):
+    """Student/Staff: Dismiss (hide) a document from your personal view only.
+    Does NOT delete it globally - admin/staff can still see it. Your dismissal persists."""
+    crud.dismiss_item(db, current_user.id, "document", document_id)
+    return {"status": "dismissed", "message": "Document dismissed from your view"}

@@ -30,6 +30,9 @@ class User(Base):
     notification_settings = relationship("NotificationSetting", back_populates="user", uselist=False)
     assigned_bus = relationship("Bus", foreign_keys=[assigned_bus_id])
     bus_room = relationship("Bus", foreign_keys=[bus_room_id])
+    # Custom boarding point coordinates (for "any location" boarding point selection)
+    custom_boarding_lat = Column(Float, nullable=True)
+    custom_boarding_lng = Column(Float, nullable=True)
 
     @property
     def assigned_bus_number(self) -> Optional[str]:
@@ -231,3 +234,13 @@ class Feedback(Base):
     replied_at = Column(DateTime, nullable=True)
 
     user = relationship("User")
+
+class UserDismissedItem(Base):
+    """Tracks items dismissed by individual users (personal delete memory).
+    Does NOT delete the item globally — only hides it from that user's view."""
+    __tablename__ = "user_dismissed_items"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    item_type = Column(String, nullable=False, index=True)  # "announcement" or "document"
+    item_id = Column(Integer, nullable=False, index=True)
+    dismissed_at = Column(DateTime, default=func.now())

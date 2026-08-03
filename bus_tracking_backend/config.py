@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     USE_SQLITE: bool = "DATABASE_URL" not in os.environ or "sqlite" in os.getenv("DATABASE_URL", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-for-jwt-change-this-in-production")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "525600"))
     FCM_SERVER_KEY: str = os.getenv("FCM_SERVER_KEY", "")
     FCM_PROJECT_ID: str = os.getenv("FCM_PROJECT_ID", "bustracker-afb3c")
     FCM_SENDER_ID: str = os.getenv("FCM_SENDER_ID", "851331446616")

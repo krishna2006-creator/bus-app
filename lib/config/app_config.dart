@@ -1,12 +1,24 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 // App configuration constants.
 
 /// Application Configuration - Centralized constants
 class AppConfig {
   // Backend Configuration
-  static const String apiScheme =
-      String.fromEnvironment('API_SCHEME', defaultValue: 'https');
-  static const String wsScheme =
-      String.fromEnvironment('WS_SCHEME', defaultValue: 'wss');
+  // Debug mode uses http/ws for local testing; release uses https/wss for production
+  static String get apiScheme {
+    if (const bool.fromEnvironment('dart.vm.product') == false) {
+      return 'http';
+    }
+    return String.fromEnvironment('API_SCHEME', defaultValue: 'https');
+  }
+
+  static String get wsScheme {
+    if (const bool.fromEnvironment('dart.vm.product') == false) {
+      return 'ws';
+    }
+    return String.fromEnvironment('WS_SCHEME', defaultValue: 'wss');
+  }
 
   static String get domain {
     const override = String.fromEnvironment('API_DOMAIN');
@@ -17,8 +29,22 @@ class AppConfig {
     // Production backend URL (Railway)
     const productionUrl = 'bus-app-production-2836.up.railway.app';
 
-    // For web builds, use production URL
-    // For mobile builds, use the override or fallback
+    // Local development URL
+    // - Web browser (run on same PC): use localhost
+    // - Android emulator: use 10.0.2.2
+    // - Physical phone on same Wi-Fi: use your PC's local IP (192.168.29.123)
+    const webLocalUrl = 'localhost:8000';
+    const localUrl = '192.168.29.123:8000';
+
+    // Use local URL for debug mode, production for release
+    // This allows local testing without Railway
+    if (const bool.fromEnvironment('dart.vm.product') == false) {
+      // Debug mode - use local backend
+      // Web (same PC) -> localhost; Android/others -> local IP
+      if (kIsWeb) return webLocalUrl;
+      return localUrl;
+    }
+
     return productionUrl;
   }
 

@@ -294,6 +294,37 @@ async def admin_delete_announcement(announcement_id: int, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Announcement not found")
     return {"status": "success", "message": "Announcement deleted"}
 
+# ===========================================================================
+# Custom boarding point by GPS coordinates (any location on map)
+# ===========================================================================
+@api_router.post("/boarding_point_coords")
+async def set_user_boarding_point_coords(
+    coords: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Set a custom boarding point by GPS coordinates (any location on map).
+    Student pins any point on the map -> backend saves coords for geofence notifications."""
+    lat = coords.get("latitude")
+    lng = coords.get("longitude")
+    if lat is None or lng is None:
+        raise HTTPException(status_code=400, detail="latitude and longitude are required")
+    user = crud.set_user_boarding_coords(db, current_user.id, float(lat), float(lng))
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"status": "success", "latitude": float(lat), "longitude": float(lng)}
+
+@api_router.get("/boarding_point")
+async def get_user_boarding_point(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Returns the user's boarding point - custom coords or system stop."""
+    result = crud.get_user_boarding_coords(db, current_user.id)
+    if result is None:
+        return {"id": None, "name": None, "latitude": None, "longitude": None}
+    return result
+
 api_router.include_router(auth_service.router)
 api_router.include_router(bus.router)
 api_router.include_router(students.router)
