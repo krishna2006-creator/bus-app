@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from bus_tracking_backend.database.database import engine, SessionLocal
 from bus_tracking_backend.database import models
 from bus_tracking_backend.utils.auth_utils import get_password_hash
+from bus_tracking_backend.utils.migrations import ensure_schema_columns
 from sqlalchemy import inspect, text
 
 COLLEGE_LATITUDE = 12.836371
@@ -80,6 +81,8 @@ def get_stop_coordinates(stop_name):
     return coordinates.get(stop_name, (COLLEGE_LATITUDE, COLLEGE_LONGITUDE))
 
 def _migrate_columns():
+    # Delegate column additions to the robust utility with retry logic
+    ensure_schema_columns(engine)
     try:
         inspector = inspect(engine)
         table_names = inspector.get_table_names()
@@ -205,42 +208,7 @@ def _migrate_columns():
 
 def reinitialize_database():
     models.Base.metadata.create_all(bind=engine)
-    try:
-        inspector = inspect(engine)
-        columns = {col['name'] for col in inspector.get_columns('users')}
-        if 'bus_room_id' not in columns:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN bus_room_id INTEGER"))
-            except Exception:
-                pass
-        if 'custom_boarding_lat' not in columns:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lat FLOAT"))
-            except Exception:
-                pass
-        if 'custom_boarding_lng' not in columns:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lng FLOAT"))
-            except Exception:
-                pass
-        columns = {col['name'] for col in inspector.get_columns('buses')}
-        if 'is_active' not in columns:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE buses ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
-            except Exception:
-                pass
-        if 'location_sharing_active' not in columns:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE buses ADD COLUMN location_sharing_active BOOLEAN DEFAULT FALSE"))
-            except Exception:
-                pass
-    except Exception as exc:
-        print(f"Reinit migration check warning (non-fatal): {exc}")
+    ensure_schema_columns(engine)
     db = SessionLocal()
     try:
         print("Seeding all user roles...")

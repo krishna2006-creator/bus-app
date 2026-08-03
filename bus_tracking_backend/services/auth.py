@@ -10,7 +10,10 @@ from ..database import crud, models
 from ..schemas import user as user_schemas
 from ..schemas import token as token_schemas
 from ..utils.auth_utils import authenticate_user, create_access_token, get_password_hash, get_current_user
+from ..utils.migrations import ensure_user_columns_safe
 from ..config import settings
+
+import sqlalchemy as sa
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +25,25 @@ router = APIRouter(
 @router.post("/register", response_model=token_schemas.Token)
 def register(user: user_schemas.UserCreate, db: Session = Depends(get_db)):
     # 1. Check if user already exists (by email or ID)
-    db_user = db.query(crud.models.User).filter(
-        (crud.models.User.email == user.email) | (crud.models.User.id == user.email.split('@')[0])
-    ).first()
+    try:
+        db_user = db.query(crud.models.User).filter(
+            (crud.models.User.email == user.email) | (crud.models.User.id == user.email.split('@')[0])
+        ).first()
+    except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc:
+        logger.warning("register: user query failed (likely missing columns): %s", exc)
+        db.rollback()
+        if ensure_user_columns_safe(db):
+            logger.info("register: schema self-heal succeeded, retrying user query.")
+            try:
+                db_user = db.query(crud.models.User).filter(
+                    (crud.models.User.email == user.email) | (crud.models.User.id == user.email.split('@')[0])
+                ).first()
+            except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc2:
+                logger.error("register: query failed again after self-heal: %s", exc2)
+                db_user = None
+        else:
+            logger.error("register: self-heal failed; cannot query users table.")
+            db_user = None
 
     if db_user:
         raise HTTPException(

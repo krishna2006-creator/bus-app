@@ -7,8 +7,14 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from bus_tracking_backend.config import settings
-from bus_tracking_backend.database.database import get_db
+from bus_tracking_backend.database.database import get_db, engine
 from bus_tracking_backend.database import models
+from bus_tracking_backend.utils.migrations import ensure_user_columns_safe
+
+import logging
+import sqlalchemy as sa
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_role(role: Optional[object]) -> str:
@@ -83,8 +89,33 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
 def authenticate_user(db: Session, username: str, password: str):
+    """Authenticate a user by email or ID.
+
+    Includes a **self-healing** safety net: if the database schema is missing
+    required columns (common in legacy/migrated databases), the function
+    automatically runs the schema migration and retries the query once.
+    """
     # Try finding user by email OR by ID
-    user = db.query(models.User).filter((models.User.email == username) | (models.User.id == username)).first()
+    try:
+        user = db.query(models.User).filter((models.User.email == username) | (models.User.id == username)).first()
+    except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc:
+        # The error is likely "column users.custom_boarding_lat does not exist"
+        # because the database schema is out of sync with the model.
+        # Attempt self-heal: add missing columns and retry once.
+        logger.warning("authenticate_user query failed (likely missing columns): %s", exc)
+        db.rollback()
+
+        if ensure_user_columns_safe(db):
+            logger.info("Schema self-heal succeeded, retrying authenticate_user query.")
+            try:
+                user = db.query(models.User).filter((models.User.email == username) | (models.User.id == username)).first()
+            except (sa.exc.ProgrammingError, sa.exc.OperationalError) as exc2:
+                logger.error("authenticate_user query failed again after self-heal: %s", exc2)
+                return None
+        else:
+            logger.error("authenticate_user self-heal failed; cannot query users table.")
+            return None
+
     if not user or not verify_password(password, user.hashed_password):
         return None
     return user

@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bus_tracking_backend.database.database import engine, Base, SessionLocal
 from bus_tracking_backend.database import models
+from bus_tracking_backend.utils.migrations import ensure_schema_columns
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,6 +23,8 @@ def create_tables():
     print("Creating PostgreSQL tables...")
     try:
         Base.metadata.create_all(bind=engine)
+        # Ensure all model columns exist in existing tables (handles upgrades)
+        ensure_schema_columns(engine)
         print("✅ All tables created successfully!")
         return True
     except Exception as e:

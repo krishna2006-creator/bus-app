@@ -31,6 +31,7 @@ from bus_tracking_backend.config import settings
 from bus_tracking_backend.routers import bus, students, announcements, requests, documents, drivers, stops, tracking, device_tokens, feedback, websocket_routes
 from bus_tracking_backend.services import auth as auth_service
 from bus_tracking_backend.init_db import init_database
+from bus_tracking_backend.utils.migrations import ensure_schema_columns
 
 logger = logging.getLogger(__name__)
 
@@ -68,30 +69,30 @@ init_database()  # Ensure seed data exists (Railway needs this for fresh DB)
 
 def _ensure_columns():
     """Force-add missing columns on every startup (critical for Railway Postgres).
-    init_database() skips migrations if users already exist, so we must ensure
-    the custom_boarding columns exist here directly."""
-    from sqlalchemy import inspect, text
-    try:
-        inspector = inspect(engine)
-        if 'users' in inspector.get_table_names():
-            cols = {col['name'] for col in inspector.get_columns('users')}
-            with engine.begin() as conn:
-                if 'custom_boarding_lat' not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lat FLOAT"))
-                    print("Ensured custom_boarding_lat column")
-                if 'custom_boarding_lng' not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lng FLOAT"))
-                    print("Ensured custom_boarding_lng column")
-                if 'bus_room_id' not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS bus_room_id INTEGER"))
-                    print("Ensured bus_room_id column")
-    except Exception as exc:
-        print(f"ensure_columns warning (non-fatal): {exc}")
+
+    Delegates to the robust ``ensure_schema_columns`` utility which includes
+    retry logic for database connection timing issues in containers.
+    """
+    success = ensure_schema_columns(engine, max_retries=3, retry_delay=2.0)
+    if not success:
+        logger.error("ensure_schema_columns could not complete after retries – "
+                     "columns may still be missing and queries will fail.")
 
 
+# Run at module import (covers gunicorn workers that import the module directly)
 _ensure_columns()
 
 app = FastAPI(title="Agni Bus Tracking API")
+
+@app.on_event("startup")
+async def _startup_ensure_schema():
+    """Startup event handler – re-runs the schema migration after the app is
+    fully initialised.  This is more reliable than module-level code because
+    by the time ``startup`` fires the database connection pool is warm and
+    ready.  Safe to call from multiple gunicorn workers (idempotent)."""
+    Base.metadata.create_all(bind=engine)
+    _ensure_columns()
+    logger.info("Startup schema check complete.")
 
 @app.get("/health")
 async def health_check():
