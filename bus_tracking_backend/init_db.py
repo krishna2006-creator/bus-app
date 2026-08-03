@@ -128,17 +128,17 @@ def _migrate_columns():
             if 'custom_boarding_lat' not in columns:
                 try:
                     with engine.begin() as conn:
-                        conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lat FLOAT"))
+                        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lat FLOAT"))
                     print("Added custom_boarding_lat column to users table")
                 except Exception as exc:
-                    print(f"custom_boarding_lat migration skipped/failed: {exc}")
+                    print(f"custom_boarding_lat migration error: {exc}")
             if 'custom_boarding_lng' not in columns:
                 try:
                     with engine.begin() as conn:
-                        conn.execute(text("ALTER TABLE users ADD COLUMN custom_boarding_lng FLOAT"))
+                        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lng FLOAT"))
                     print("Added custom_boarding_lng column to users table")
                 except Exception as exc:
-                    print(f"custom_boarding_lng migration skipped/failed: {exc}")
+                    print(f"custom_boarding_lng migration error: {exc}")
         if 'buses' in inspector.get_table_names():
             columns = {col['name'] for col in inspector.get_columns('buses')}
             if 'is_active' not in columns:

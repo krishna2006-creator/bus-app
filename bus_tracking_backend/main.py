@@ -65,6 +65,32 @@ _init_firebase()
 Base.metadata.create_all(bind=engine)
 init_database()  # Ensure seed data exists (Railway needs this for fresh DB)
 
+
+def _ensure_columns():
+    """Force-add missing columns on every startup (critical for Railway Postgres).
+    init_database() skips migrations if users already exist, so we must ensure
+    the custom_boarding columns exist here directly."""
+    from sqlalchemy import inspect, text
+    try:
+        inspector = inspect(engine)
+        if 'users' in inspector.get_table_names():
+            cols = {col['name'] for col in inspector.get_columns('users')}
+            with engine.begin() as conn:
+                if 'custom_boarding_lat' not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lat FLOAT"))
+                    print("Ensured custom_boarding_lat column")
+                if 'custom_boarding_lng' not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_boarding_lng FLOAT"))
+                    print("Ensured custom_boarding_lng column")
+                if 'bus_room_id' not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS bus_room_id INTEGER"))
+                    print("Ensured bus_room_id column")
+    except Exception as exc:
+        print(f"ensure_columns warning (non-fatal): {exc}")
+
+
+_ensure_columns()
+
 app = FastAPI(title="Agni Bus Tracking API")
 
 @app.get("/health")
